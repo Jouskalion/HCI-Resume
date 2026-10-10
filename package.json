@@ -1,0 +1,19 @@
+{
+  "name": "jianli-studio-v1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "简序 · 简历解析、核对与独立网页发布平台",
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --watch --env-file-if-exists=.env server/index.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "express": "5.3.0",
+    "multer": "2.4.0",
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.4.299"
+  }
+}

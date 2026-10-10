@@ -1,0 +1,19 @@
+services:
+  resume:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /app/data
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+    volumes:
+      - resume-data:/app/data
+    restart: unless-stopped
+volumes:
+  resume-data:
