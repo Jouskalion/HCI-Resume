@@ -63,6 +63,8 @@ test('完整流程：注册、导入、核对、发布快照、更新、下架�
   assert.match(imported.data.sourceText, /800ms/);
   assert.ok(Array.isArray(imported.data.content.education));
   assert.ok(Array.isArray(imported.data.warnings));
+  assert.equal(imported.data.review.version, 1);
+  assert.ok(imported.data.review.fields.some(item => item.field === 'school' && item.ranges.length));
   assert.equal((await request('/api/resumes', { cookie })).data.resumes.length, 0, '导入本身不能创建或发布');
 
   const content = imported.data.content;
@@ -249,6 +251,44 @@ test('连续登录失败触发基础限流', async t => {
   const blocked = await request('/api/auth/login', { method: 'POST', body: { email: 'nobody@example.com', password: 'invalid-password' } });
   assert.equal(blocked.status, 429);
   assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+});
+
+test('字段证据只能由服务端计算；核对状态独立保存、变更失效且不泄露给公开页面', async t => {
+  const { request, register } = await fixture(t);
+  const { cookie } = await register();
+  const content = emptyResume(); content.profile.name = '周予安';
+  const forged = { section: 'profile', recordId: 'profile', field: 'name', value: '伪造', match: 'exact', ranges: [{ start: 0, end: 9999 }] };
+  const created = await request('/api/resumes', { method: 'POST', cookie, body: { title: '核对流程', content, sourceText: '姓名：周予安', review: { fields: [forged] } } });
+  assert.equal(created.status, 201);
+  const { id } = created.data.resume;
+  const evidence = created.data.resume.review.fields.find(item => item.field === 'name');
+  assert.equal(evidence.value, '周予安');
+  assert.deepEqual(evidence.ranges, [{ start: 3, end: 6 }]);
+  const published = (await request(`/api/resumes/${id}/publish`, { method: 'POST', cookie })).data.resume;
+  const confirmation = { section: 'profile', recordId: 'profile', field: 'name', value: '周予安', injected: 'discard me' };
+  let saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '核对流程', content, review: { fields: [forged], confirmations: [confirmation] } } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.resume.hasUnpublishedChanges, false, '只改变核对标记不属于公开内容更改');
+  assert.deepEqual(saved.data.resume.review.fields.find(item => item.field === 'name'), evidence, 'PUT 忽略客户端证据范围');
+  assert.deepEqual(saved.data.resume.review.confirmations, [{ section: 'profile', recordId: 'profile', field: 'name', value: '周予安' }]);
+  const reloaded = (await request(`/api/resumes/${id}`, { cookie })).data.resume;
+  assert.deepEqual(reloaded.review, saved.data.resume.review);
+  const publicResume = (await request(`/api/public/${published.slug}`)).data.resume;
+  assert.equal('review' in publicResume, false);
+  assert.equal('review' in publicResume.content, false);
+  assert.equal('sourceText' in publicResume, false);
+  content.profile.name = '周予宁';
+  saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '核对流程', content, review: { confirmations: [confirmation] } } });
+  assert.deepEqual(saved.data.resume.review.confirmations, [], '不能用旧字段值确认新内容');
+  assert.equal(saved.data.resume.review.fields.find(item => item.field === 'name').value, '周予安', '保留原始提取值供前端标记已修改');
+  const manual = { section: 'profile', recordId: 'profile', field: 'name', value: '周予宁' };
+  saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '核对流程', content, review: { confirmations: [manual] } } });
+  assert.deepEqual(saved.data.resume.review.confirmations, [manual], '无原文证据的手动修改也可以由用户确认');
+  saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '核对流程', content, sourceText: '姓名：周予宁', review: { confirmations: [manual] } } });
+  assert.deepEqual(saved.data.resume.review.confirmations, []);
+  assert.equal(saved.data.resume.review.fields.find(item => item.field === 'name').value, '周予宁');
+  const invalid = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '核对流程', content, review: { confirmations: [{ ...manual, field: '__proto__' }] } } });
+  assert.equal(invalid.status, 400);
 });
 
 test('中文 DOCX/PDF 经真实上传后提取学历与实习记录', async t => {

@@ -369,3 +369,97 @@ dialog{border:1px solid #dce2e7;border-radius:12px;padding:32px;max-width:calc(1
   .live-preview {padding-inline:18px}
 }
 @media print{@page{size:A4;margin:13mm}html{scroll-behavior:auto}body,body.public-page{background:#fff!important;color:#263545}.public-topbar,.public-sidebar,.public-bottom,.skip-link,.toast-region,dialog,.site-header,.site-footer{display:none!important}.public-layout{display:block!important;max-width:none!important;padding:0!important;margin:0!important}.resume-paper{box-shadow:none!important;border:0!important;border-radius:0!important;padding:0!important;width:100%;max-width:none;color:#526477;-webkit-print-color-adjust:exact;print-color-adjust:exact}.resume-profile{padding-bottom:18px;margin-bottom:22px}.resume-profile h1{font-size:30px}.resume-headline{font-size:12px}.resume-summary{font-size:10px}.resume-section{margin-bottom:22px;break-inside:auto}.resume-section-title{break-after:avoid;page-break-after:avoid;margin-bottom:14px}.resume-section-title h2{font-size:13px}.resume-entry,.skill-row{break-inside:avoid;page-break-inside:avoid}.resume-entry+.resume-entry{margin-top:18px}.entry-heading{display:flex}.entry-heading h3{font-size:11px}.entry-date{font-size:9px}.entry-meta{font-size:9px}.resume-bullets{font-size:10px}.project-summary,.entry-subtle{font-size:10px}.resume-contacts{font-size:9px}.result-block{padding:7px 10px}.result-block .resume-bullets{font-size:9px}.resume-tags{margin-top:9px}.resume-tags>span{font-size:7px}.demo-label{margin:0 0 22px;font-size:9px}.resume-footer{font-size:8px;margin-top:23px}.resume-paper a{color:inherit;text-decoration:none}.resume-footer,.entry-heading{break-inside:avoid}.skill-row h3,.skill-row p{font-size:10px}}
+
+/* V2: keep the desktop editor and put source evidence beside the selected field. */
+@media screen {
+  .field-label-row {display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:7px;min-height:32px}
+  .field-label-row label {font-size:16px;font-weight:650;color:var(--text);cursor:pointer}
+  .field-source-button {display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid #bcc8d6;border-radius:5px;background:#fff;color:var(--blue);font-size:14px;min-height:32px;line-height:1.4}
+  .field-source-button .icon {width:15px;height:15px}
+  .field-source-button:hover {background:#edf2ff;border-color:var(--blue)}
+  .field-grid .form-field {display:block;padding:7px;border-radius:7px;margin-inline:-7px}
+  .field-grid .form-field.is-reviewing {background:#eef3ff;box-shadow:inset 0 0 0 1px #bdcbed}
+  .field-grid .form-field>.field-review-state,.field-review-state {display:inline-block;font-size:14px;font-weight:500;line-height:1.6;color:#526174;margin-top:5px}
+  .field-grid .form-field>.field-review-state.confirmed,.field-review-state.confirmed {color:var(--green)}
+  .field-grid .form-field>.field-review-state.changed,.field-grid .form-field>.field-review-state.warning,.field-review-state.changed,.field-review-state.warning {color:var(--amber)}
+  .field-review-state.confirmed::before {content:'✓ ';font-weight:700}
+  .field-review-state.warning::before {content:'! ';font-weight:700}
+  .field-review-progress {padding:15px 17px;margin-bottom:24px;border:1px solid #c9d4e4;border-radius:8px;background:#f6f8fc}
+  .review-progress-copy {display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:16px;color:var(--text)}
+  .review-progress-copy strong {font-weight:650}
+  .review-progress-copy b {color:var(--blue)}
+  .field-review-progress progress {display:block;width:100%;height:7px;margin:10px 0;border:0;border-radius:8px;overflow:hidden;background:#dce4ef;accent-color:var(--blue)}
+  .field-review-progress progress::-webkit-progress-bar {background:#dce4ef}
+  .field-review-progress progress::-webkit-progress-value {background:var(--blue)}
+  .field-review-progress p {font-size:14px;color:var(--muted);line-height:1.7;margin:0}
+  #proof-content.has-source-workspace {padding:0;overflow:hidden;min-height:0}
+  .source-workspace {height:100%;display:flex;flex-direction:column;min-height:0}
+  .source-inspector {flex-shrink:0;max-height:62%;overflow-y:auto;padding:18px;background:#fff;border-bottom:1px solid #cbd5e1}
+  .source-inspector>.eyebrow {font-size:14px}
+  .source-inspector h2 {font-size:20px;font-weight:650;line-height:1.5;color:var(--navy);margin:7px 0 5px}
+  .source-inspector p {font-size:14px;line-height:1.75;color:var(--muted)}
+  .source-inspector>.button {margin-top:14px}
+  .source-inspector-top {display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:14px;color:var(--muted)}
+  .source-inspector-top .field-review-state {margin-top:0}
+  .source-record-title {margin:0 0 10px;overflow-wrap:anywhere}
+  .source-current-value {font-size:16px;color:var(--text);line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;max-height:105px;overflow:auto;padding:10px 12px;background:#f3f6fa;border-radius:6px;border:1px solid #d5deea}
+  .source-current-value>span {color:var(--muted)}
+  .source-match-explanation {margin-top:10px}
+  .source-field-warning {display:flex;gap:8px;margin-top:10px;padding:9px 10px;font-size:14px;line-height:1.7;color:var(--amber);background:#fff6e7;border-radius:5px}
+  .source-field-warning>.icon {flex-shrink:0;width:17px;height:17px;margin-top:3px}
+  .source-review-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:center;margin-top:14px}
+  .source-review-actions .button {padding:8px 12px;font-size:14px}
+  .source-document-heading {display:flex;gap:7px;align-items:center;padding:11px 16px;font-size:14px;color:var(--muted);border-bottom:1px solid #d7e0eb;flex-shrink:0}
+  .source-document-heading .icon {width:16px;height:16px}
+  .source-document {position:relative;overflow:auto;min-height:120px;flex:1;padding:12px 0 30px;background:#fff;scroll-padding-top:60px}
+  .source-document:focus-visible {outline:2px solid var(--blue);outline-offset:-3px}
+  .source-line {display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;padding:4px 14px 4px 0;font-size:14px;line-height:1.85;border-left:3px solid transparent}
+  .source-line-number {color:#64748b;font-variant-numeric:tabular-nums;text-align:right;user-select:none}
+  .source-line-text {white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
+  .source-line.has-source-hit {background:#fff8e5;border-left-color:#9c650a}
+  .source-line mark {color:#332405;background:#ffe3a0;border-radius:2px;font-weight:650;padding:1px 0}
+  .review-queue-summary {padding:0 0 18px;border-bottom:1px solid #d5deea;margin-bottom:16px}
+  .review-queue-summary strong {font-size:18px;color:var(--navy)}
+  .review-queue-summary p {font-size:14px;color:var(--muted);line-height:1.8;margin-top:7px}
+  .field-review-queue {display:flex;flex-direction:column;gap:10px}
+  .review-field-item {display:flex;flex-direction:column;gap:5px;text-align:left;background:#fff;border:1px solid #c5d0df;border-radius:7px;padding:13px 14px;width:100%;color:var(--text)}
+  .review-field-item:hover {border-color:var(--blue);background:#f4f7ff}
+  .review-field-heading {display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .review-field-heading strong {font-size:16px;font-weight:650}
+  .review-field-heading .field-review-state {margin:0}
+  .review-field-context {font-size:14px;color:var(--muted);line-height:1.7}
+  .review-field-value {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:14px;line-height:1.7}
+  .review-field-warning {font-size:14px;color:var(--amber);line-height:1.7}
+}
+
+/* Draft persistence and focused review keep the existing desktop layout. */
+@media screen {
+  .save-state {min-width:128px;justify-content:flex-end}
+  .save-state.pending,.save-state.saving {color:#526174}
+  .save-state.error {color:#9a3d18}
+  .save-state .spinner {width:16px;height:16px;border-width:2px;margin:0}
+  .save-state .text-button {color:#9a3d18;text-decoration:underline;font-size:14px;min-height:36px}
+  .save-error-notice {padding:12px 15px;margin:0 0 20px;border:1px solid #dca98d;border-radius:6px;background:#fff5eb;color:#853818;font-size:14px;line-height:1.8}
+  .save-error-notice[hidden] {display:none}
+  .review-filter {display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #d5deea;background:#f6f8fc;flex-shrink:0}
+  .review-filter label {font-size:14px;color:var(--text);white-space:nowrap;font-weight:650}
+  .review-filter select {min-width:0;flex:1;font-size:14px;color:var(--text);height:38px;padding:5px 26px 5px 8px;border:1px solid #b9c5d6;border-radius:5px;background:#fff}
+  #proof-content>.review-filter {margin:-2px 0 18px;padding:12px;border:1px solid #d5deea;border-radius:6px}
+  .source-workspace .source-inspector {max-height:55%}
+  .source-review-actions {gap:6px 12px}
+  .source-review-actions>.button {justify-content:center;min-height:44px}
+  .record-review-button {margin:0 0 18px;gap:7px}
+  dialog.batch-review-modal {width:min(820px,calc(100vw - 64px));max-height:88vh;padding:28px;overflow:auto}
+  .batch-record-title {font-size:20px;font-weight:700;color:var(--navy);margin:12px 0 8px}
+  .batch-review-table {border:1px solid #c7d3e2;border-radius:7px;overflow:hidden;margin:20px 0}
+  .batch-review-head,.batch-review-row {display:grid;grid-template-columns:1fr 1fr}
+  .batch-review-head {background:#eff3f9;color:var(--text);font-size:14px;font-weight:700}
+  .batch-review-head>span,.batch-review-row>div,.batch-review-row>blockquote {padding:13px 16px}
+  .batch-review-row {border-top:1px solid #d6deea;color:var(--text)}
+  .batch-review-row strong {font-size:14px;color:#405572}
+  .batch-review-row p,.batch-review-row blockquote {font-size:16px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+  .batch-review-row blockquote {border-left:1px solid #d6deea;background:#fffaf0}
+  .batch-review-skipped {padding:14px 18px;border:1px solid #dfc38e;background:#fff8e9;border-radius:7px;font-size:14px;color:#805416;line-height:1.8}
+  .batch-review-skipped ul {margin:8px 0 0;padding-left:20px}
+  .batch-review-modal .modal-actions {position:sticky;bottom:-28px;margin:20px -28px -28px;padding:18px 28px;background:#fff;border-top:1px solid #d6deea;z-index:1}
+}

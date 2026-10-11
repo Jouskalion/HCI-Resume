@@ -9,7 +9,7 @@ const app = createApp({
   secureCookies: process.env.COOKIE_SECURE === 'true' || (process.env.COOKIE_SECURE === undefined && process.env.NODE_ENV === 'production'),
 });
 const server = app.listen(port, process.env.HOST || '127.0.0.1', () => {
-  console.log(`简序 V1 已启动：http://${process.env.HOST || '127.0.0.1'}:${port}`);
+  console.log(`简序 V2 已启动：http://${process.env.HOST || '127.0.0.1'}:${port}`);
 });
 server.requestTimeout = 120_000;
 server.headersTimeout = 30_000;

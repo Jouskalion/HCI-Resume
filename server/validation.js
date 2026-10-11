@@ -35,7 +35,7 @@ export function credentials(body, registration = false) {
   return { email, password, name };
 }
 
-const fields = {
+export const RESUME_FIELDS = {
   profile: ['name', 'headline', 'email', 'phone', 'location', 'summary', 'website'],
   education: ['school', 'major', 'level', 'degree', 'startDate', 'endDate', 'status', 'gpa', 'ranking', 'courses'],
   experience: ['company', 'department', 'position', 'type', 'startDate', 'endDate', 'location', 'responsibilities', 'achievements', 'technologies'],
@@ -47,7 +47,7 @@ const fields = {
 function normalizeFields(value, section) {
   const input = object(value, '简历内容');
   const result = {};
-  for (const field of fields[section]) {
+  for (const field of RESUME_FIELDS[section]) {
     const max = ['responsibilities', 'achievements', 'summary', 'contribution', 'items', 'courses', 'technologies'].includes(field) ? 8000 : 2000;
     result[field] = textField(input[field], `${section}.${field}`, max);
   }
@@ -113,12 +113,35 @@ export function normalizeWarnings(input = []) {
 export function resumeInput(body, current = null, blankContent = null) {
   object(body, '简历内容');
   if (current && body.content === undefined) throw httpError(400, '保存时请提交完整简历内容。');
-  return {
+  const input = {
     title: textField(body.title ?? (current ? undefined : '我的简历'), '简历名称', 120, { required: true, trim: true }),
     content: normalizeContent(body.content ?? blankContent),
     sourceText: body.sourceText === undefined ? (current?.sourceText ?? '') : textField(body.sourceText, '原简历文字', MAX_SOURCE_LENGTH),
     warnings: body.warnings === undefined ? (current?.warnings ?? []) : normalizeWarnings(body.warnings),
   };
+  if (body.review !== undefined) {
+    const review = object(body.review, '核对记录');
+    if (review.confirmations !== undefined) input.confirmations = normalizeConfirmations(review.confirmations, input.content);
+  }
+  return input;
+}
+
+export function normalizeConfirmations(input, content) {
+  if (!Array.isArray(input) || input.length > 6000) throw httpError(400, '核对记录格式不正确或数量过多。');
+  const seen = new Set();
+  return input.map(value => {
+    const entry = object(value, '核对记录');
+    const section = textField(entry.section, '核对模块', 30, { required: true });
+    const field = textField(entry.field, '核对字段', 40, { required: true });
+    const recordId = textField(entry.recordId, '核对记录编号', 100, { required: true });
+    if (!Object.hasOwn(RESUME_FIELDS, section) || !RESUME_FIELDS[section].includes(field)) throw httpError(400, '核对记录包含未知字段。');
+    const snapshot = textField(entry.value, '核对字段值', 8000);
+    const row = section === 'profile' ? (recordId === 'profile' ? content.profile : null) : content[section].find(item => item.id === recordId);
+    const key = JSON.stringify([section, recordId, field]);
+    if (!row || row[field] !== snapshot || seen.has(key)) return null;
+    seen.add(key);
+    return { section, recordId, field, value: snapshot };
+  }).filter(Boolean);
 }
 
 export function publicContent(input) {

@@ -18,7 +18,7 @@ const HEADINGS = {
   projects: ['项目经历', '项目经验', '科研经历', '科研项目', '作品经历', '项目实践', '个人项目', '项目成果', 'projects', 'project experience', 'research experience', 'portfolio'],
   skills: ['专业技能', '技术能力', '技术技能', '技能清单', '技能特长', '相关技能', '职业技能', '掌握技能', '个人技能', '技能', 'skills', 'technical skills'],
 };
-const DATE = '(?:19|20)\\d{2}(?:[.／/年-](?:0?[1-9]|1[0-2])(?:月)?|年)?';
+const DATE = '(?:19|20)\\d{2}(?:[.／/年-](?:1[0-2]|0?[1-9])(?:月)?|年)?(?!\\d)';
 const RANGE = new RegExp(`(${DATE})\\s*(?:至|到|—|–|－|-|~|～|to)\\s*(${DATE}|至今|现在|今|present|current)`, 'i');
 const SINGLE_DATE = new RegExp(DATE, 'g');
 const SCHOOL = /([\p{Script=Han}A-Za-z0-9·（）()&.-]{2,45}?(?:大学|学院|学校|University|College|Institute(?: of Technology)?))/iu;
@@ -43,13 +43,12 @@ function dates(line) {
   return match ? { startDate: normalizeDate(match[1]), endDate: normalizeDate(match[2]), raw: match[0] } : null;
 }
 function stripDate(line) { const range = dates(line); return range ? line.replace(range.raw, ' ').replace(/^[\s|｜,，]+|[\s|｜,，]+$/g, '').trim() : line; }
+function isDateLine(line) { return Boolean(dates(line)) && !stripDate(line).replace(/^(?:时间|起止时间|在校时间|学习时间|教育时间|实习时间|工作时间|任职时间|项目时间)\s*[：:]?\s*/, '').trim(); }
+function differentPeriod(first, second) { return Boolean(first?.startDate && second && (first.startDate !== second.startDate || first.endDate !== second.endDate)); }
 function tokens(line) { return stripDate(line).split(/\s*[|｜;；\t]\s*|\s{2,}/).map(s => s.trim()).filter(Boolean); }
 function label(line, names) {
   const match = line.match(new RegExp(`(?:^|[|｜;；])\\s*(?:${names})\\s*[：:]\\s*([^|｜;；]+)`, 'i'));
   return match?.[1]?.trim() || '';
-}
-function detailLabel(line, names) {
-  return line.match(new RegExp(`^(?:${names})\\s*[：:]\\s*(.+)$`, 'i'))?.[1]?.trim() || label(line, names);
 }
 function heading(line) {
   const text = cleanLine(line).replace(/^[（(]?[一二三四五六七八九十\d]+[）).、]\s*/, '').replace(/[【】\[\]]/g, '').trim();
@@ -85,34 +84,45 @@ function extractProfile(lines, profile) {
   }
 }
 function findSchool(line) { return label(line, '学校|院校|毕业院校|就读院校').split(/[,，]/)[0] || stripDate(line).replace(/^(?:学校|院校|毕业院校|就读院校)\s*[：:]?\s*/, '').match(SCHOOL)?.[1] || ''; }
+function educationSchool(line) { return /^(?:(?:主修|相关|核心)?课程|项目|参与|负责|研究方向|论文)/.test(line) ? '' : findSchool(line); }
+function majorFrom(line, school = '') {
+  const named = label(line, '专业|主修专业|Major'); if (named) return named;
+  if (/课程|GPA|绩点|排名|研究方向|论文|[：:。！？]/i.test(line)) return '';
+  const rest = stripDate(line).replace(school || /$^/, '').replace(/(?:工学|理学|文学|经济学|管理学|法学|教育学|艺术学|医学|农学|历史学|哲学|军事学)?(?:学士|硕士|博士)学位|(?:工学|理学|文学|经济学|管理学|法学|教育学|艺术学|医学|农学|历史学|哲学|军事学)?学士/g, '').replace(/博士研究生|硕士研究生|大学本科|大学专科|本科|硕士|博士|大专|专科|高中|中专|在读|应届(?:毕业生)?|已毕业/g, '');
+  return rest.split(/[|｜,，;；\s]+/).find(value => /^[\p{Script=Han}A-Za-z&-]{2,45}$/u.test(value) && /(?:工程|科学|技术|管理|设计|文学|语言|金融|会计|经济|医学|法学|数学|物理|化学|新闻|学)$/.test(value)) || '';
+}
 function parseEducation(lines, warnings) {
   const records = []; let current; let pending = [];
   function create() { current = record('education'); records.push(current); }
-  for (const original of lines) {
-    const line = cleanLine(original); if (!line) continue;
-    const school = !/^(?:主修|相关|核心)?课程|^项目|^参与|^负责/.test(line) ? findSchool(line) : '';
+  const prepared = lines.map(cleanLine).filter(Boolean);
+  for (const [index, line] of prepared.entries()) {
+    const school = educationSchool(line);
     const range = dates(line);
-    if (range && !stripDate(line) && current?.startDate) { pending.push(line); continue; }
+    if (isDateLine(line) && (!current || current.startDate || educationSchool(prepared[index + 1] || ''))) { pending.push(line); continue; }
     const nextLevel = line.match(/博士研究生|硕士研究生|大学本科|大学专科|本科|硕士|博士|大专|专科|高中|中专/)?.[0];
-    const distinctDates = range && current?.startDate && (range.startDate !== current.startDate || range.endDate !== current.endDate);
+    const candidateDate = range || (pending.length ? dates(pending.at(-1)) : null);
+    const distinctDates = differentPeriod(current, candidateDate);
     const distinctLevel = nextLevel && current?.level && nextLevel !== current.level;
-    if (!current || (school && current.school && (school !== current.school || distinctDates || distinctLevel))) create();
+    const repeatedHeader = school && current?.school && (current.major || current.level || current.courses || current.startDate);
+    if (!current || (school && current.school && (school !== current.school || distinctDates || distinctLevel || repeatedHeader))) create();
+    else if (pending.length && current.startDate && !school) {
+      // A date without a following school/header is not safe to attach to the previous record.
+      warn(warnings, 'education', 'startDate', `日期归属不明确，未覆盖已有日期，请核对：${pending.join(' ')}`, current);
+      pending = [];
+    }
+    if (pending.length > 1) warn(warnings, 'education', 'startDate', '连续出现多段日期，暂保留紧邻学校的一段，请对照原文核对。', current);
+    if (pending.length) pending = [pending.at(-1)];
     const work = [...pending, line]; pending = [];
     for (const part of work) {
       const date = dates(part); if (date) { current.startDate = date.startDate; current.endDate = date.endDate; }
-      current.school ||= findSchool(part);
+      current.school ||= educationSchool(part);
       current.level ||= label(part, '学历|学历层次') || part.match(/博士研究生|硕士研究生|大学本科|大学专科|本科|硕士|博士|大专|专科|高中|中专|Bachelor(?:'s)?|Master(?:'s)?|Ph\.?D\.?/i)?.[0] || '';
       current.degree ||= label(part, '学位') || part.match(/(?:工学|理学|文学|经济学|管理学|法学|教育学|艺术学|医学|农学|历史学|哲学|军事学)?(?:学士|硕士|博士)学位|(?:工学|理学|文学|经济学|管理学|法学|教育学|艺术学|医学|农学|历史学|哲学|军事学)?学士/)?.[0] || '';
       current.status ||= part.match(/(?:硕士|博士|本科|研究生)?在读|应届(?:毕业生)?|已毕业|(?:预计|预期)\s*(?:(?:19|20)\d{2}[.年/-]?\d{0,2}月?)?\s*毕业/)?.[0] || '';
       current.gpa ||= part.match(/(?:GPA|平均绩点|绩点)\s*[：:]?\s*([\d.]+(?:\s*\/\s*[\d.]+)?)/i)?.[1] || '';
       current.ranking ||= part.match(/(?:专业排名|年级排名|排名|Rank)\s*[：:]?\s*((?:前|Top\s*)?[\d.]+(?:\s*[/／]\s*\d+|\s*[%％]|\s*名)?)/i)?.[1] || '';
       const courses = label(part, '主修课程|相关课程|核心课程|课程'); if (courses) append(current, 'courses', courses);
-      current.major ||= label(part, '专业|主修专业|Major');
-      if (!current.major && current.school && part.includes(current.school)) {
-        const rest = stripDate(part).replace(current.school, '').replace(/(?:学历|学位|学校|院校|在读|应届|已毕业)\s*[：:]?/g, '').replace(/博士研究生|硕士研究生|大学本科|大学专科|本科|硕士|博士|大专|专科|高中|中专|(?:工学|理学|文学)?学士(?:学位)?/g, '').replace(/[|｜,，;；]/g, ' ').trim();
-        const guess = rest.split(/\s+/).find(s => /工程|科学|技术|管理|设计|文学|语言|金融|会计|经济|医学|法学|数学|物理|化学|新闻|学$/.test(s) && !/GPA|绩点|课程|排名|毕业/i.test(s));
-        if (guess) current.major = guess;
-      }
+      current.major ||= majorFrom(part, current.school);
     }
   }
   if (pending.length && current) warn(warnings, 'education', 'startDate', `末尾日期未能确定归属，请对照原文核对：${pending.join(' ')}`, current);
@@ -121,11 +131,12 @@ function parseEducation(lines, warnings) {
     if (!entry.level) warn(warnings, 'education', 'level', '未识别到学历层次，请核对本科、硕士等信息。', entry);
     if (!entry.major) warn(warnings, 'education', 'major', '未识别到专业，请对照原文核对。', entry);
     if (!entry.startDate || !entry.endDate) warn(warnings, 'education', 'startDate', '教育起止时间不完整，请核对。', entry);
+    else if (entry.endDate !== '至今' && entry.endDate < entry.startDate) warn(warnings, 'education', 'endDate', '结束时间早于开始时间，请核对原文中的日期。', entry);
   }
   return records;
 }
 function companyFrom(line) {
-  if (/^(?:负责|参与|工作内容|项目|职责|成果|技术|使用|通过|完成|开发|优化|设计|实现|协助|维护)/.test(line)) return '';
+  if (/^(?:负责|参与|工作内容|工作职责|岗位职责|实习内容|个人职责|个人贡献|主要工作|项目|职责|成果|工作成果|实习成果|主要成果|业绩|技术|使用|通过|完成|开发|优化|设计|实现|协助|维护|部门|所属部门|地点|工作地点|城市|岗位|职位|职务)/.test(line)) return '';
   const named = label(line, '公司|公司名称|企业|单位|实习单位|工作单位'); if (named) return named;
   const plain = stripDate(line).replace(/^(?:公司|单位)\s*[：:]?\s*/, '');
   const company = plain.match(COMPANY)?.[1]; if (company) return company;
@@ -139,43 +150,61 @@ function companyFrom(line) {
   return '';
 }
 function positionFrom(line) { return label(line, '岗位|职位|职务|实习岗位|Position|Title') || line.match(POSITION)?.[0]?.trim() || ''; }
-function addDescription(entry, line, section) {
-  const explicitTech = detailLabel(line, '技术栈|使用技术|相关技术|技术|开发环境|Tech Stack|Technologies');
-  if (explicitTech) { append(entry, 'technologies', explicitTech); return; }
-  const role = section === 'projects' ? label(line, '个人角色|项目角色|担任角色|角色|Role') : '';
-  if (role) { entry.role = role; return; }
-  if (section === 'projects') {
-    const summary = detailLabel(line, '项目背景|项目介绍|项目描述|项目简介|背景|简介|描述');
-    if (summary) { append(entry, 'summary', summary); return; }
+const DESCRIPTION_LABELS = {
+  responsibilities: ['负责内容', '职责', '岗位职责', '工作职责', '工作内容', '实习内容', '项目职责', '个人职责', '个人贡献', '主要工作'],
+  achievements: ['成果', '工作成果', '项目成果', '实习成果', '业绩', '主要成果'],
+  technologies: ['技术栈', '使用技术', '相关技术', '技术', '开发环境', 'Tech Stack', 'Technologies'],
+  summary: ['项目背景', '项目介绍', '项目描述', '项目简介', '背景', '简介', '描述'],
+  role: ['个人角色', '项目角色', '担任角色', '角色', 'Role'],
+};
+const DESCRIPTION_LABEL = new RegExp(`(?:^|[|｜;；])\\s*(${Object.values(DESCRIPTION_LABELS).flat().sort((a, b) => b.length - a.length).join('|')})\\s*[：:]\\s*`, 'gi');
+function addDescription(entry, line, section, allowUnlabelled = true, continuation = '') {
+  const matches = [...line.matchAll(DESCRIPTION_LABEL)];
+  if (matches.length) {
+    let lastField = '';
+    for (const [index, match] of matches.entries()) {
+      const field = Object.keys(DESCRIPTION_LABELS).find(key => DESCRIPTION_LABELS[key].some(value => value.toLowerCase() === match[1].toLowerCase()));
+      if (!Object.hasOwn(entry, field) || (field === 'role' && section !== 'projects')) continue;
+      const value = line.slice(match.index + match[0].length, matches[index + 1]?.index ?? line.length).replace(/[\s|｜;；]+$/g, '').trim();
+      append(entry, field, value); lastField = value ? '' : field;
+    }
+    return lastField;
   }
-  const responsibility = detailLabel(line, '负责内容|职责|岗位职责|工作职责|工作内容|实习内容|项目职责|个人职责|个人贡献|主要工作');
-  const achievement = detailLabel(line, '成果|工作成果|项目成果|实习成果|业绩|主要成果');
-  if (responsibility) append(entry, 'responsibilities', responsibility);
-  if (achievement) append(entry, 'achievements', achievement);
-  if (responsibility || achievement) return;
+  if (!allowUnlabelled) return '';
   if (/^(?:岗位|职位|职务|部门|地点|工作地点|时间|起止时间|实习时间|项目时间|公司|公司名称|项目名称|项目名|角色|链接|作品链接|项目链接|网址|URL)\s*[：:]/i.test(line)) return;
   for (const sentence of line.split(/[；;]/).map(s => s.trim()).filter(Boolean)) {
-    append(entry, ACHIEVEMENT.test(sentence) ? 'achievements' : 'responsibilities', sentence);
+    append(entry, continuation || (ACHIEVEMENT.test(sentence) ? 'achievements' : 'responsibilities'), sentence);
   }
+  return continuation;
 }
 function parseExperience(lines, warnings) {
-  const records = []; let current; let pending = []; let experienceType = 'other';
-  for (const original of lines) {
-    if (original.startsWith('__SECTION__')) { experienceType = /实习|intern/i.test(original) ? 'internship' : /工作|employment|work experience/i.test(original) ? 'work' : 'other'; current = undefined; continue; }
-    const line = cleanLine(original); if (!line) continue;
+  const records = []; let current; let pending = []; let experienceType = 'other'; let continuation = '';
+  const prepared = lines.map(cleanLine).filter(Boolean);
+  for (const [index, line] of prepared.entries()) {
+    if (line.startsWith('__SECTION__')) {
+      if (pending.length && current) warn(warnings, 'experience', 'startDate', `日期未确定归属，请核对：${pending.join(' ')}`, current);
+      experienceType = /实习|intern/i.test(line) ? 'internship' : /工作|employment|work experience/i.test(line) ? 'work' : 'other'; current = undefined; pending = []; continuation = ''; continue;
+    }
     const company = companyFrom(line);
     const range = dates(line);
-    const position = !/^(?:负责|参与|职责|工作内容|技术|成果)/.test(line) ? positionFrom(line) : '';
-    if (range && !stripDate(line) && current?.startDate) { pending.push(line); continue; }
-    const newRole = current?.position && position && current.position !== position && (range || company);
-    const newPeriod = company && range && current?.startDate && (range.startDate !== current.startDate || range.endDate !== current.endDate);
-    if (!current || (company && current.company && company !== current.company) || newRole || newPeriod) {
+    const position = !/^(?:负责|参与|职责|工作内容|工作职责|实习内容|个人职责|个人贡献|主要工作|技术|成果|业绩|通过|完成|协助|维护|优化|开发|设计|实现)/.test(line) ? positionFrom(line) : '';
+    if (isDateLine(line) && (!current || current.startDate || companyFrom(prepared[index + 1] || ''))) { pending.push(line); continue; }
+    const candidateDate = range || (pending.length ? dates(pending.at(-1)) : null);
+    const newRole = current?.position && position && current.position !== position && (candidateDate || company);
+    const newPeriod = (company || position) && differentPeriod(current, candidateDate);
+    const repeatedHeader = company && current?.company && (current.position || current.responsibilities || current.achievements);
+    if (!current || (company && current.company && company !== current.company) || newRole || newPeriod || repeatedHeader) {
       const previousCompany = current?.company;
       current = record('experience');
       current.type = experienceType;
       if (newRole && !company) current.company = previousCompany;
-      records.push(current);
+      records.push(current); continuation = '';
+    } else if (pending.length && current.startDate && !company && !position) {
+      warn(warnings, 'experience', 'startDate', `日期归属不明确，未覆盖已有日期，请核对：${pending.join(' ')}`, current);
+      pending = [];
     }
+    if (pending.length > 1) warn(warnings, 'experience', 'startDate', '连续出现多段日期，暂保留紧邻经历的一段，请对照原文核对。', current);
+    if (pending.length) pending = [pending.at(-1)];
     for (const pendingLine of pending) { const d = dates(pendingLine); if (d) { current.startDate = d.startDate; current.endDate = d.endDate; } }
     pending = [];
     if (range) { current.startDate = range.startDate; current.endDate = range.endDate; }
@@ -185,18 +214,16 @@ function parseExperience(lines, warnings) {
     current.location ||= label(line, '地点|工作地点|城市|Location');
     if (/实习|intern/i.test(line)) current.type = 'internship';
     else if (/全职|正式员工|full.time/i.test(line)) current.type = 'work';
-    const header = company || (position && !LABEL_LINE.test(line)) || (range && !stripDate(line));
-    if (!header) addDescription(current, line, 'experience');
-    else {
-      const described = line.match(/(?:职责|工作内容|负责内容|成果|业绩)[：:].+$/)?.[0];
-      if (described) addDescription(current, described, 'experience');
-    }
+    const header = company || position || isDateLine(line);
+    const lastField = addDescription(current, line, 'experience', !header, continuation);
+    if (lastField !== undefined) continuation = lastField;
   }
   if (pending.length && current) warn(warnings, 'experience', 'startDate', '有一段日期未能确定所属实习，请对照原文核对。', current);
   for (const entry of records) {
     if (!entry.company) warn(warnings, 'experience', 'company', '未识别到公司或单位，请补充。', entry);
     if (!entry.position) warn(warnings, 'experience', 'position', '未识别到岗位，请补充实际岗位名称。', entry);
     if (!entry.startDate || !entry.endDate) warn(warnings, 'experience', 'startDate', '这段经历的起止时间不完整，请核对。', entry);
+    else if (entry.endDate !== '至今' && entry.endDate < entry.startDate) warn(warnings, 'experience', 'endDate', '结束时间早于开始时间，请核对原文中的日期。', entry);
     if (!entry.responsibilities && !entry.achievements) warn(warnings, 'experience', 'responsibilities', '未识别到具体工作内容，请补充个人职责与实际成果。', entry);
   }
   return records;

@@ -2,13 +2,16 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
+import { buildReview } from './provenance.js';
 
 function unpack(row) {
   if (!row) return null;
+  const content = JSON.parse(row.content_json);
   return {
     id: row.id, ownerId: row.owner_id, title: row.title, slug: row.slug,
     status: row.published_json ? 'published' : 'draft',
-    content: JSON.parse(row.content_json), sourceText: row.source_text,
+    content, sourceText: row.source_text,
+    review: row.review_json ? JSON.parse(row.review_json) : buildReview(content, row.source_text),
     warnings: JSON.parse(row.warnings_json), createdAt: row.created_at,
     updatedAt: row.updated_at, publishedAt: row.published_at,
     published: row.published_json ? JSON.parse(row.published_json) : null,
@@ -34,11 +37,14 @@ export function openStore(dataDir) {
     CREATE TABLE IF NOT EXISTS resumes (
       id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       title TEXT NOT NULL, content_json TEXT NOT NULL, source_text TEXT NOT NULL,
-      warnings_json TEXT NOT NULL, slug TEXT UNIQUE, published_json TEXT,
+      warnings_json TEXT NOT NULL, review_json TEXT, slug TEXT UNIQUE, published_json TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, published_at TEXT
     );
     CREATE INDEX IF NOT EXISTS resumes_owner ON resumes(owner_id, updated_at);
   `);
+  if (!db.prepare('PRAGMA table_info(resumes)').all().some(column => column.name === 'review_json')) {
+    db.exec('ALTER TABLE resumes ADD COLUMN review_json TEXT');
+  }
 
   const get = (id, ownerId) => unpack(db.prepare('SELECT * FROM resumes WHERE id = ? AND owner_id = ?').get(id, ownerId));
   return {
@@ -65,13 +71,13 @@ export function openStore(dataDir) {
     create(ownerId, input) {
       const id = randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`INSERT INTO resumes (id,owner_id,title,content_json,source_text,warnings_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?)`).run(id, ownerId, input.title, JSON.stringify(input.content), input.sourceText, JSON.stringify(input.warnings), now, now);
+      db.prepare(`INSERT INTO resumes (id,owner_id,title,content_json,source_text,warnings_json,review_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(id, ownerId, input.title, JSON.stringify(input.content), input.sourceText, JSON.stringify(input.warnings), JSON.stringify(input.review ?? buildReview(input.content, input.sourceText)), now, now);
       return get(id, ownerId);
     },
     save(id, ownerId, input) {
-      db.prepare(`UPDATE resumes SET title=?,content_json=?,source_text=?,warnings_json=?,updated_at=? WHERE id=? AND owner_id=?`)
-        .run(input.title, JSON.stringify(input.content), input.sourceText, JSON.stringify(input.warnings), new Date().toISOString(), id, ownerId);
+      db.prepare(`UPDATE resumes SET title=?,content_json=?,source_text=?,warnings_json=?,review_json=?,updated_at=? WHERE id=? AND owner_id=?`)
+        .run(input.title, JSON.stringify(input.content), input.sourceText, JSON.stringify(input.warnings), JSON.stringify(input.review ?? buildReview(input.content, input.sourceText)), new Date().toISOString(), id, ownerId);
       return get(id, ownerId);
     },
     publish(id, ownerId) {

@@ -7,6 +7,129 @@ import { emptyResume, parseResume } from '../server/parser.js';
 
 const sample = await readFile(new URL('../samples/林知远-虚构测试简历.txt', import.meta.url), 'utf8');
 
+test('V2：独立日期、同校不同学历和单独专业行保持每段教育对应', async () => {
+  const { content: c } = await parseResume(`姓名：陈知行
+教育背景
+2026年9月 至今
+杭州电子科技大学
+计算机技术 | 硕士研究生 | 在读
+2022/09 — 2026/06
+杭州电子科技大学
+软件工程 | 本科 | 工学学士 | 已毕业
+专业排名：18/156`);
+  assert.equal(c.education.length, 2);
+  assert.deepEqual(c.education.map(({ school, major, level, startDate, endDate }) => ({ school, major, level, startDate, endDate })), [
+    { school: '杭州电子科技大学', major: '计算机技术', level: '硕士研究生', startDate: '2026.09', endDate: '至今' },
+    { school: '杭州电子科技大学', major: '软件工程', level: '本科', startDate: '2022.09', endDate: '2026.06' },
+  ]);
+  assert.equal(c.education[0].degree, '');
+  assert.equal(c.education[1].degree, '工学学士');
+  assert.equal(c.education[0].ranking, '');
+  assert.equal(c.education[1].ranking, '18/156');
+});
+
+test('V2：同公司不同周期、独立岗位和职责成果标签不串段或重复', async () => {
+  const { content: c } = await parseResume(`姓名：陈知行
+实习经历
+2025/07 至 2025/09
+恒生电子股份有限公司
+岗位：Java 开发实习生
+工作内容：完成订单查询接口；补充接口文档；成果：交付 5 个接口；技术栈：Java、MySQL
+2024年7月—2024年9月
+恒生电子股份有限公司
+软件测试实习生
+职责：维护回归用例。
+成果：补充 24 条用例。`);
+  assert.equal(c.experience.length, 2);
+  assert.equal(c.experience[0].startDate, '2025.07');
+  assert.equal(c.experience[1].startDate, '2024.07');
+  assert.equal(c.experience[0].position, 'Java 开发实习生');
+  assert.equal(c.experience[1].position, '软件测试实习生');
+  assert.equal(c.experience[0].responsibilities, '完成订单查询接口；补充接口文档');
+  assert.equal(c.experience[0].achievements, '交付 5 个接口');
+  assert.equal(c.experience[0].technologies, 'Java、MySQL');
+  assert.equal(c.experience[1].responsibilities, '维护回归用例。');
+  assert.equal(c.experience[1].achievements, '补充 24 条用例。');
+});
+
+test('V2：后置日期、无标签专业和待核对日期不覆盖已有经历', async () => {
+  const { content: c, warnings } = await parseResume(`姓名：陈知行
+教育背景
+杭州电子科技大学
+软件工程
+学历：本科
+时间：2022.09 — 2026.06
+实习经历
+恒生电子股份有限公司
+Java 开发实习生
+实习时间：2025年7月—2025年9月
+工作内容：完成参数校验。
+2024.07—2024.09`);
+  assert.equal(c.education[0].major, '软件工程');
+  assert.equal(c.education[0].startDate, '2022.09');
+  assert.equal(c.experience[0].startDate, '2025.07');
+  assert.equal(c.experience[0].endDate, '2025.09');
+  assert(warnings.some(w => w.recordId === c.experience[0].id && w.field === 'startDate' && /归属|所属/.test(w.message)));
+});
+
+test('V2：日期的十月至十二月完整保留，缺失岗位不从职责猜测', async () => {
+  const { content: c, warnings } = await parseResume(`姓名：陈知行
+实习经历
+恒生电子股份有限公司 | 2025-10 — 2025-12
+工作内容：协助 Java 工程师完成接口回归。
+荣誉奖项
+2025.11 | 校级程序设计竞赛 | 二等奖`);
+  assert.equal(c.experience[0].position, '');
+  assert.equal(c.experience[0].startDate, '2025.10');
+  assert.equal(c.experience[0].endDate, '2025.12');
+  assert.equal(c.awards[0].date, '2025.11');
+  assert(warnings.some(w => w.recordId === c.experience[0].id && w.field === 'position'));
+});
+
+test('V2：多行职责标题、同行项目标签及重复描述不会丢失或重复', async () => {
+  const { content: c } = await parseResume(`姓名：陈知行
+实习经历
+恒生电子股份有限公司 | Java 开发实习生 | 2025.07—2025.09
+工作内容：
+维护回归用例。
+维护回归用例。
+成果：
+补充 24 条用例。
+技术栈：Java、JUnit
+工作职责：参与恒生电子股份有限公司内部接口开发。
+项目经历
+项目名称：预约管理系统
+项目背景：课程系统。
+个人职责：实现预约接口；项目成果：完成 12 个接口；技术栈：Java、MySQL`);
+  assert.equal(c.experience.length, 1);
+  assert.equal(c.experience[0].responsibilities, '维护回归用例。\n参与恒生电子股份有限公司内部接口开发。');
+  assert.equal(c.experience[0].achievements, '补充 24 条用例。');
+  assert.equal(c.experience[0].technologies, 'Java、JUnit');
+  assert.equal(c.projects[0].responsibilities, '实现预约接口');
+  assert.equal(c.projects[0].achievements, '完成 12 个接口');
+  assert.equal(c.projects[0].technologies, 'Java、MySQL');
+});
+
+test('V2：导入测试简历完整保留两段教育、三段实习和缺失岗位提示', async () => {
+  const text = await readFile(new URL('../samples/陈知行-V2核对测试.txt', import.meta.url), 'utf8');
+  const { content: c, warnings } = await parseResume(text);
+  assert.equal(c.profile.name, '陈知行');
+  assert.equal(c.education.length, 2);
+  assert.equal(c.education[0].startDate, '2026.09');
+  assert.equal(c.education[0].endDate, '至今');
+  assert.equal(c.education[1].startDate, '2022.09');
+  assert.equal(c.experience.length, 3);
+  assert.equal(c.experience[0].company, '恒生电子股份有限公司');
+  assert.equal(c.experience[1].company, '恒生电子股份有限公司');
+  assert.equal(c.experience[2].company, '杭州有赞科技有限公司');
+  assert.equal(c.experience[2].position, '');
+  assert.equal(c.experience[2].endDate, '2023.12');
+  assert(warnings.some(w => w.recordId === c.experience[2].id && w.field === 'position'));
+  assert.equal(c.awards[1].date, '2024.11');
+  assert.equal(c.projects.length, 1);
+  assert.equal(c.skills.length, 4);
+});
+
 test('中文标准简历准确分组：两段教育、两段实习、三个奖项、两个项目', async () => {
   const { content: c, sourceText, method } = await parseResume(sample);
   assert.equal(method, 'rules');

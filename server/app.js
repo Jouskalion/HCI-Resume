@@ -9,6 +9,7 @@ import { openStore } from './store.js';
 import { credentials, resumeInput, publicContent, httpError, textField, MAX_SOURCE_LENGTH, normalizeContent, normalizeWarnings } from './validation.js';
 import { parseResume, emptyResume } from './parser.js';
 import { extractDocument } from './extract.js';
+import { buildReview, reconcileReview } from './provenance.js';
 
 const scrypt = promisify(scryptCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,12 +162,16 @@ export function createApp({ dataDir = resolve(ROOT, 'data'), publicBaseUrl = '',
       if (expectedUserId !== req.user.id) throw httpError(409, '登录账号已变化，请在当前账号下重新导入简历。');
     }
     if (store.count(req.user.id) >= 100) throw httpError(400, '每个账号最多保存 100 份简历，请先删除不需要的草稿。');
-    const record = store.create(req.user.id, resumeInput(req.body, null, emptyResume()));
+    const input = resumeInput(req.body, null, emptyResume());
+    input.review = reconcileReview(null, input);
+    const record = store.create(req.user.id, input);
     res.status(201).json({ resume: privateResume(record, req) });
   });
   app.get('/api/resumes/:id', requireUser, ownedResume, (req, res) => res.json({ resume: privateResume(req.resumeRecord, req) }));
   app.put('/api/resumes/:id', requireUser, ownedResume, (req, res) => {
-    const record = store.save(req.params.id, req.user.id, resumeInput(req.body, req.resumeRecord));
+    const input = resumeInput(req.body, req.resumeRecord);
+    input.review = reconcileReview(req.resumeRecord, input);
+    const record = store.save(req.params.id, req.user.id, input);
     res.json({ resume: privateResume(record, req) });
   });
   app.delete('/api/resumes/:id', requireUser, ownedResume, (req, res) => {
@@ -223,7 +228,11 @@ export function createApp({ dataDir = resolve(ROOT, 'data'), publicBaseUrl = '',
       sourceText = textField(sourceText, '简历文字', MAX_SOURCE_LENGTH, { required: true });
       if (sourceText.trim().length < 10) throw httpError(400, '识别到的文字过少，请粘贴完整简历，或上传包含可选择文字的 PDF/DOCX。');
       const result = await parseResume(sourceText, { useAI });
-      if (!res.destroyed) res.json({ content: normalizeContent(result.content), sourceText: textField(result.sourceText ?? sourceText, '原简历文字', MAX_SOURCE_LENGTH), warnings: normalizeWarnings(result.warnings), method: result.method });
+      if (!res.destroyed) {
+        const content = normalizeContent(result.content);
+        const original = textField(result.sourceText ?? sourceText, '原简历文字', MAX_SOURCE_LENGTH);
+        res.json({ content, sourceText: original, review: buildReview(content, original), warnings: normalizeWarnings(result.warnings), method: result.method });
+      }
     } finally {
       req.importProcessing = false;
       req.releaseImport();
