@@ -11,7 +11,7 @@ export const sections = {
 export const defaultOrder = ['education', 'experience', 'awards', 'projects', 'skills'];
 export const fields = {
   profile: [
-    ['name','姓名','text','如：林知远'], ['headline','求职方向 / 个人标题','text','如：Java 后端开发 · 2027 届'],
+    ['name','姓名','text','如：周予安'], ['headline','求职方向 / 个人标题','text','如：Java 后端开发 · 2026 届'],
     ['email','邮箱','email','hello@example.com'], ['phone','电话','tel','填写可联系的电话号码'],
     ['location','所在城市','text','如：杭州'], ['website','个人网站 / 作品集','url','https://…'],
     ['summary','个人简介','textarea','用两三句话介绍你的方向、优势和目标。',true]
@@ -19,7 +19,7 @@ export const fields = {
   education: [
     ['school','学校','text','学校全称'], ['major','专业','text','如：计算机科学与技术'],
     ['level','学历','text','如：本科 / 硕士研究生'], ['degree','学位','text','如：工学学士；原文未说明可留空'],
-    ['startDate','入学时间','text','如：2023.09'], ['endDate','毕业时间','text','如：2027.06'],
+    ['startDate','入学时间','text','如：2022.09'], ['endDate','毕业时间','text','如：2026.06'],
     ['status','就读状态','text','如：在读 / 已毕业'], ['gpa','GPA / 成绩','text','如：3.8 / 4.0'],
     ['ranking','排名','text','如：专业前 10%'], ['courses','相关课程','textarea','按实际情况填写，可换行。',true]
   ],
@@ -60,14 +60,80 @@ export function normalizeContent(value={}) {
   c.settings.hidden=(Array.isArray(c.settings.hidden)?c.settings.hidden:[]).filter(x=>defaultOrder.includes(x));
   return c;
 }
+export const demoNotice = '院校、企业及赛事名称真实，人物与个人经历为模拟内容';
 export function demoContent() {
   return normalizeContent({
-    profile:{name:'林知远',headline:'Java 后端开发 · 2027 届',email:'linzhiyuan@example.com',location:'杭州',summary:'关注可靠、高效的后端服务，喜欢将复杂问题拆解为清晰的解决方案。希望在真实业务中持续打磨工程能力。'},
-    education:[{id:'edu-demo',school:'示例理工大学',major:'计算机科学与技术',level:'本科',degree:'',startDate:'2023.09',endDate:'2027.06',status:'在读',gpa:'3.8 / 4.0',ranking:'专业前 10%',courses:'数据结构、操作系统、计算机网络、数据库原理'}],
-    experience:[{id:'exp-demo',company:'示例科技有限公司',position:'Java 后端开发实习生',department:'研发部',type:'internship',startDate:'2026.07',endDate:'2026.09',location:'杭州',responsibilities:'参与订单服务开发，负责订单查询接口与参数校验。\n协助梳理慢查询日志，为高频查询建立合适的索引。',achievements:'测试环境中，某订单查询接口平均响应时间由 800ms 降至 300ms。',technologies:'Java · Spring Boot · MySQL'}],
-    awards:[{id:'award-demo',name:'大学生软件设计竞赛（示例）',date:'2026.05',level:'省级',prize:'二等奖',issuer:'',contribution:'团队成员，负责服务端接口设计与实现。'},{id:'award-demo-2',name:'校级学业奖学金（示例）',date:'2025.11',level:'校级',prize:'一等奖',issuer:'',contribution:''}],
-    projects:[{id:'project-demo',name:'校园闲置物品交流平台',role:'后端开发',startDate:'2025.10',endDate:'2026.03',summary:'面向校园用户的闲置物品发布与交流工具，为物品信息检索和交易意向沟通提供支持。',responsibilities:'设计用户、商品与收藏模块的数据模型和接口。\n实现基于 Redis 的热点商品信息缓存，并补充接口测试。',achievements:'完成从需求拆解、接口实现到部署验证的完整开发过程。',technologies:'Spring Boot · MySQL · Redis',url:''}],
-    skills:[{id:'skill-demo',category:'编程与框架',items:'Java、Spring Boot、MyBatis'},{id:'skill-demo-2',category:'数据与工具',items:'MySQL、Redis、Git、Linux'}]
+    profile:{name:'周予安',headline:'Java 后端开发工程师 · 2026 届',email:'zhou.yuan@example.com',phone:'138****6207',location:'杭州',summary:'2026 届软件工程本科毕业生，关注后端接口、数据库设计与测试质量。'},
+    education:[{id:'edu-demo',school:'杭州电子科技大学',major:'软件工程',level:'本科',degree:'工学学士',startDate:'2022.09',endDate:'2026.06',status:'已毕业',gpa:'',ranking:'18/156',courses:'数据结构、操作系统、计算机网络、数据库原理、软件工程'}],
+    experience:[
+      {id:'exp-demo',company:'恒生电子股份有限公司',position:'Java 开发实习生',department:'',type:'internship',startDate:'2025.07',endDate:'2025.09',location:'杭州',responsibilities:'参与业务管理后台开发，负责查询接口、参数校验及异常处理。\n协助排查慢查询，补充接口文档与回归测试用例。',achievements:'完成 5 个接口；在固定测试数据下，查询平均耗时由 620ms 降至 280ms。',technologies:'Java · Spring Boot · MyBatis · MySQL'},
+      {id:'exp-demo-2',company:'杭州有赞科技有限公司',position:'Java 后端开发实习生',department:'',type:'internship',startDate:'2024.07',endDate:'2024.09',location:'杭州',responsibilities:'参与商家后台订单列表、条件筛选和分页查询功能开发。\n配合测试人员复现缺陷，修复空值处理和查询条件校验问题。',achievements:'完成 4 个查询接口，补充 24 条单元测试，整理接口联调说明。',technologies:'Java · Spring Boot · MySQL · Git · JUnit'}
+    ],
+    awards:[
+      {id:'award-demo',name:'第十六届蓝桥杯全国软件和信息技术专业人才大赛',date:'2025.06',level:'国家级',prize:'二等奖',issuer:'',contribution:'Java 软件开发大学 B 组，全国总决赛，个人赛。'},
+      {id:'award-demo-2',name:'第十六届蓝桥杯全国软件和信息技术专业人才大赛',date:'2025.04',level:'省级',prize:'一等奖',issuer:'',contribution:'Java 软件开发大学 B 组，浙江赛区省赛，个人赛。'},
+      {id:'award-demo-3',name:'杭州电子科技大学优秀学生奖学金',date:'2025.04',level:'校级',prize:'二等奖',issuer:'',contribution:''}
+    ],
+    projects:[
+      {id:'project-demo',name:'实验室预约管理系统',role:'后端开发',startDate:'2025.01',endDate:'2025.05',summary:'3 人课程项目，支持设备查询、时段预约、审批和取消预约。',responsibilities:'设计预约表和角色权限；用事务与唯一约束处理同一时段重复预约。',achievements:'完成 12 个接口及 30 条测试用例，验证预约冲突与越权访问场景。',technologies:'Java · Spring Boot · MyBatis · MySQL',url:''},
+      {id:'project-demo-2',name:'校园二手交易平台',role:'后端负责人',startDate:'2024.03',endDate:'2024.06',summary:'3 人课程项目，实现商品发布、检索、下单及订单状态查询。',responsibilities:'负责商品与订单接口、登录校验；使用 Redis 缓存商品分类数据。',achievements:'完成 16 个接口，提供数据库脚本、接口文档与本地部署说明。',technologies:'Java · Spring Boot · MySQL · Redis',url:''}
+    ],
+    skills:[
+      {id:'skill-demo',category:'编程语言',items:'Java、SQL；理解集合、异常处理及面向对象基础'},
+      {id:'skill-demo-2',category:'后端框架',items:'Spring Boot、Spring MVC、MyBatis；能编写 REST 接口'},
+      {id:'skill-demo-3',category:'数据存储',items:'MySQL、Redis；了解索引、事务及常见缓存使用方式'},
+      {id:'skill-demo-4',category:'开发工具',items:'Git、Maven、Docker、JUnit；能完成本地部署和接口测试'}
+    ]
   });
 }
-export const demoSource='【演示简历 · 人物、学校、经历与成果均为虚构】\n\n林知远\nJava 后端开发 · 2027 届\n杭州 | linzhiyuan@example.com\n\n教育背景\n示例理工大学 | 计算机科学与技术 | 本科在读\n2023.09—2027.06 | GPA 3.8 / 4.0 | 专业前 10%\n\n实习经历\n示例科技有限公司 | Java 后端开发实习生 | 研发部\n2026.07—2026.09 | 杭州\n参与订单服务开发，负责订单查询接口与参数校验。\n协助梳理慢查询日志，为高频查询建立合适的索引。\n测试环境中，某订单查询接口平均响应时间由 800ms 降至 300ms。\n技术：Java、Spring Boot、MySQL\n\n荣誉奖项\n大学生软件设计竞赛（示例） | 省级二等奖 | 2026.05\n团队成员，负责服务端接口设计与实现。\n校级学业奖学金（示例） | 一等奖 | 2025.11\n\n项目经历\n校园闲置物品交流平台 | 后端开发 | 2025.10—2026.03\n面向校园用户的闲置物品发布与交流工具。\n设计用户、商品与收藏模块的数据模型和接口。\n实现基于 Redis 的热点商品信息缓存，并补充接口测试。\n完成从需求拆解、接口实现到部署验证的完整开发过程。\n技术：Spring Boot、MySQL、Redis\n\n专业技能\nJava、Spring Boot、MyBatis；MySQL、Redis、Git、Linux';
+export const demoSource=`周予安
+${demoNotice}。
+求职意向：Java 后端开发工程师 · 2026 届
+邮箱：zhou.yuan@example.com
+电话：138****6207
+现居地：杭州
+个人简介：2026 届软件工程本科毕业生，关注后端接口、数据库设计与测试质量。
+
+教育背景
+2022.09 — 2026.06 | 杭州电子科技大学 | 软件工程 | 本科 | 工学学士 | 已毕业
+专业排名：18/156
+主修课程：数据结构、操作系统、计算机网络、数据库原理、软件工程
+
+实习经历
+2025.07 — 2025.09 | 恒生电子股份有限公司 | Java 开发实习生
+工作地点：杭州
+工作内容：参与业务管理后台开发，负责查询接口、参数校验及异常处理。
+工作内容：协助排查慢查询，补充接口文档与回归测试用例。
+技术栈：Java、Spring Boot、MyBatis、MySQL
+成果：完成 5 个接口；在固定测试数据下，查询平均耗时由 620ms 降至 280ms。
+2024.07 — 2024.09 | 杭州有赞科技有限公司 | Java 后端开发实习生
+工作地点：杭州
+工作内容：参与商家后台订单列表、条件筛选和分页查询功能开发。
+工作内容：配合测试人员复现缺陷，修复空值处理和查询条件校验问题。
+技术栈：Java、Spring Boot、MySQL、Git、JUnit
+成果：完成 4 个查询接口，补充 24 条单元测试，整理接口联调说明。
+
+荣誉奖项
+2025.06 | 第十六届蓝桥杯全国软件和信息技术专业人才大赛 | 国家级 | 二等奖
+个人贡献：Java 软件开发大学 B 组，全国总决赛，个人赛。
+2025.04 | 第十六届蓝桥杯全国软件和信息技术专业人才大赛 | 省级 | 一等奖
+个人贡献：Java 软件开发大学 B 组，浙江赛区省赛，个人赛。
+2025.04 | 杭州电子科技大学优秀学生奖学金 | 校级 | 二等奖
+
+项目经历
+2025.01 — 2025.05 | 实验室预约管理系统 | 后端开发
+项目背景：3 人课程项目，支持设备查询、时段预约、审批和取消预约。
+个人职责：设计预约表和角色权限；用事务与唯一约束处理同一时段重复预约。
+技术栈：Java、Spring Boot、MyBatis、MySQL
+项目成果：完成 12 个接口及 30 条测试用例，验证预约冲突与越权访问场景。
+2024.03 — 2024.06 | 校园二手交易平台 | 后端负责人
+项目背景：3 人课程项目，实现商品发布、检索、下单及订单状态查询。
+个人职责：负责商品与订单接口、登录校验；使用 Redis 缓存商品分类数据。
+技术栈：Java、Spring Boot、MySQL、Redis
+项目成果：完成 16 个接口，提供数据库脚本、接口文档与本地部署说明。
+
+专业技能
+编程语言：Java、SQL；理解集合、异常处理及面向对象基础
+后端框架：Spring Boot、Spring MVC、MyBatis；能编写 REST 接口
+数据存储：MySQL、Redis；了解索引、事务及常见缓存使用方式
+开发工具：Git、Maven、Docker、JUnit；能完成本地部署和接口测试`;

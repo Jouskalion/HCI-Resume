@@ -74,6 +74,7 @@ test('完整流程：注册、导入、核对、发布快照、更新、下架�
   content.settings.hidden = ['awards'];
   content.settings.showPhone = false;
   content.settings.showEmail = false;
+  const publishedOrder = [...content.settings.order];
   const created = await request('/api/resumes', { method: 'POST', cookie, body: { title: 'Java 开发简历', content, sourceText: sampleText, warnings: [{ section: 'profile', field: 'name', message: '请核对姓名' }] } });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const id = created.data.resume.id;
@@ -93,26 +94,34 @@ test('完整流程：注册、导入、核对、发布快照、更新、下架�
   assert.equal(publicVersion.data.resume.content.profile.phone, '');
   assert.equal(publicVersion.data.resume.content.profile.email, '');
   assert.deepEqual(publicVersion.data.resume.content.awards, []);
+  assert.deepEqual(publicVersion.data.resume.content.settings.order, publishedOrder);
   assert.equal(JSON.stringify(publicVersion.data).includes('未公开奖项'), false);
   assert.equal(JSON.stringify(publicVersion.data).includes('请核对姓名'), false);
 
   content.profile.summary = '修改中的简介';
+  const revisedOrder = ['projects', 'education', 'experience', 'awards', 'skills'];
+  content.settings.order = revisedOrder;
   let saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: '更新后的名称', content } });
   assert.equal(saved.status, 200);
   assert.equal(saved.data.resume.hasUnpublishedChanges, true);
   assert.equal(saved.data.resume.sourceText, sampleText, '未提交原文应保留');
   assert.equal((await request(`/api/public/${slug}`)).data.resume.content.profile.summary, '我的最初简介');
+  assert.deepEqual((await request(`/api/public/${slug}`)).data.resume.content.settings.order, publishedOrder, '草稿排序不能提前改变 HR 看到的顺序');
+  assert.deepEqual(saved.data.resume.content.settings.hidden, ['awards'], '排序不能改变隐藏模块的选择');
   assert.equal((await request('/api/resumes', { cookie })).data.resumes[0].hasUnpublishedChanges, true);
   content.profile.summary = '我的最初简介';
+  content.settings.order = publishedOrder;
   saved = await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: 'Java 开发简历', content } });
   assert.equal(saved.data.resume.hasUnpublishedChanges, false, '恢复成发布版时不应再提示未发布修改');
 
   content.profile.summary = '已核对的新简介';
+  content.settings.order = revisedOrder;
   await request(`/api/resumes/${id}`, { method: 'PUT', cookie, body: { title: 'Java 开发简历', content } });
   const updated = await request(`/api/resumes/${id}/publish`, { method: 'POST', cookie });
   assert.equal(updated.data.resume.slug, slug);
   assert.equal(updated.data.resume.hasUnpublishedChanges, false);
   assert.equal((await request(`/api/public/${slug}`)).data.resume.content.profile.summary, '已核对的新简介');
+  assert.deepEqual((await request(`/api/public/${slug}`)).data.resume.content.settings.order, revisedOrder, '重新发布后才同步新顺序');
   const unpublished = await request(`/api/resumes/${id}/unpublish`, { method: 'POST', cookie });
   assert.equal(unpublished.data.resume.status, 'draft');
   assert.equal(unpublished.data.resume.slug, slug);
