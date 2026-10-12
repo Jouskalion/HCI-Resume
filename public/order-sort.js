@@ -58,11 +58,33 @@ export function setupOrderSorting(list,{onCommit,isDisabled=()=>false,labelFor=k
     else others.at(-1)?.classList.add('drop-after');
   }
   function announcePosition(){say(`${labelFor(active.section)}，目标位置第 ${active.index+1} 位，共 ${active.order.length} 个模块。${active.mode==='keyboard'?'按空格或回车确认，Esc 取消。':'松开把手完成排序，Esc 取消。'}`);}
+  function scrollSurface(){
+    const root=doc.scrollingElement||doc.documentElement;
+    // Desktop uses an editor pane; the narrow layout scrolls the document.
+    // Inspect actual overflow so a visible-overflow editor is not mistaken for a pane.
+    for(let parent=list.parentElement;parent&&parent!==root;parent=parent.parentElement){
+      const overflow=view.getComputedStyle?.(parent).overflowY;
+      if(/^(auto|scroll|overlay)$/.test(overflow)&&parent.scrollHeight>parent.clientHeight){
+        const rect=parent.getBoundingClientRect();
+        return {element:parent,rect:{left:Math.max(0,rect.left),right:Math.min(view.innerWidth,rect.right),top:Math.max(0,rect.top),bottom:Math.min(view.innerHeight,rect.bottom)}};
+      }
+    }
+    if(!root)return null;
+    const rect={left:0,right:view.innerWidth,top:0,bottom:view.innerHeight};
+    const switcher=doc.querySelector?.('.editor-pane-switch');
+    if(switcher){
+      const style=view.getComputedStyle?.(switcher),box=switcher.getBoundingClientRect();
+      if(/^(sticky|fixed)$/.test(style?.position)&&style.display!=='none'&&style.visibility!=='hidden'&&box.top<=1&&box.bottom>0&&active.x>=box.left&&active.x<=box.right){
+        rect.top=Math.min(view.innerHeight,box.bottom);
+      }
+    }
+    return {element:root,rect};
+  }
   function autoScroll(){
     if(!active||active.mode!=='pointer')return;
-    const scroller=list.closest('.editor-main');
-    if(scroller){
-      const rect=scroller.getBoundingClientRect(),edge=40;
+    const surface=scrollSurface();
+    if(surface&&active.valid){
+      const {element:scroller,rect}=surface,edge=Math.min(40,(rect.bottom-rect.top)/4);
       if(active.x>=rect.left&&active.x<=rect.right&&active.y>=rect.top&&active.y<=rect.bottom){
         const delta=active.y<rect.top+edge?-12:active.y>rect.bottom-edge?12:0;
         if(delta){

@@ -12,6 +12,79 @@ let lastFocus=null, toastTimeout, activeConfirm=null;
 let orderSorter=null;
 let activeReview=null;
 let reviewFilter='all', autosave=null, autosaveTarget=null;
+let mobileEditorPanel='edit';
+const mobileEditorMedia=typeof window.matchMedia==='function'?window.matchMedia('(max-width: 1179px)'):null;
+const isMobileEditor=()=>Boolean(mobileEditorMedia?.matches);
+
+function revealNavItem(nav,item){
+ if(!nav?.getBoundingClientRect||!item?.getBoundingClientRect||nav.scrollWidth<=nav.clientWidth)return;
+ const bounds=nav.getBoundingClientRect(),target=item.getBoundingClientRect();
+ if(target.left<bounds.left)nav.scrollLeft-=bounds.left-target.left+8;
+ else if(target.right>bounds.right)nav.scrollLeft+=target.right-bounds.right+8;
+}
+
+// Keep the same fields mounted when changing panes so selection and unsaved input survive.
+function syncMobileEditorPanel(){
+ const shell=document.querySelector('.editor-shell');if(!shell||!editor)return;
+ shell.dataset.mobilePanel=mobileEditorPanel;
+ document.querySelectorAll('.editor-pane-switch [data-action="editor-pane"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.panel===mobileEditorPanel)));
+ if(isMobileEditor()&&mobileEditorPanel==='edit')revealNavItem(document.querySelector('.editor-sidebar nav'),document.querySelector('.editor-sidebar nav button.selected'));
+}
+function setMobileEditorPanel(panel,{restoreField=false,scroll=true}={}){
+ if(!editor||!['edit','proof'].includes(panel))return;
+ orderSorter?.cancel(false);mobileEditorPanel=panel;syncMobileEditorPanel();
+ if(!isMobileEditor())return;
+ if(panel==='proof')scrollToSourceHit();
+ if(restoreField&&panel==='edit'&&activeReview){
+  const container=Array.from(document.querySelectorAll('[data-field-container]')).find(node=>node.dataset.fieldContainer===reviewKey(activeReview));
+  if(container){container.scrollIntoView({block:'center',behavior:'instant'});container.querySelector('[data-field]')?.focus({preventScroll:true});return;}
+ }
+ if(scroll)document.querySelector('.editor-shell')?.scrollIntoView({block:'start',behavior:'instant'});
+ const target=panel==='proof'?(document.querySelector('.source-inspector h2')||document.querySelector('.proof-tabs button.selected')):document.querySelector('.editor-section-header h1');
+ target?.focus({preventScroll:true});
+}
+mobileEditorMedia?.addEventListener?.('change',()=>{
+ if(!editor)return;
+ const focused=document.activeElement;
+ if(isMobileEditor()){
+  if(focused?.closest?.('.proof-panel'))mobileEditorPanel='proof';
+  else if(focused?.closest?.('.editor-main'))mobileEditorPanel='edit';
+ }
+ syncMobileEditorPanel();
+ if(!isMobileEditor()&&(focused?.closest?.('.editor-pane-switch')||focused?.closest?.('.mobile-return-edit')))document.querySelector('.editor-section-header h1')?.focus({preventScroll:true});
+});
+
+function selectPublicChapter(nav,selected){
+ if(!selected)return;
+ nav.querySelectorAll('a').forEach(link=>{
+  link.classList.toggle('active',link===selected);
+  if(link===selected)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');
+ });
+ revealNavItem(nav,selected);
+}
+function updatePublicChapter(){
+ const nav=document.querySelector('.public-sidebar nav');if(!nav)return;
+ const links=Array.from(nav.querySelectorAll('a')),sidebar=nav.parentElement;
+ const threshold=window.innerWidth<=1100?Math.max(90,sidebar.getBoundingClientRect().bottom+20):140;
+ let selected=links[0];
+ for(const link of links.slice(1)){
+  const section=document.querySelector(link.getAttribute('href'));
+  if(section&&section.getBoundingClientRect().top<=threshold)selected=link;
+ }
+ // Short final sections cannot always reach the header before the page ends.
+ const page=document.scrollingElement;
+ if(page&&page.scrollHeight>page.clientHeight&&page.scrollTop+page.clientHeight>=page.scrollHeight-2){
+  selected=links.slice(1).reverse().find(link=>document.querySelector(link.getAttribute('href')))||selected;
+ }
+ if(selected&&!selected.classList.contains('active'))selectPublicChapter(nav,selected);
+}
+let publicScrollFrame=false;
+function queuePublicChapter(){
+ if(publicScrollFrame)return;
+ publicScrollFrame=true;requestAnimationFrame(()=>{publicScrollFrame=false;updatePublicChapter();});
+}
+window.addEventListener('scroll',queuePublicChapter,{passive:true});
+window.addEventListener('resize',queuePublicChapter,{passive:true});
 
 async function api(path,{body,...options}={}) {
   const headers={...(options.headers||{})};
@@ -64,6 +137,7 @@ async function navigate(path,{force=false,replace=false}={}) {
 async function renderRoute(){
   orderSorter?.destroy();orderSorter=null;
   activeReview=null;
+  mobileEditorPanel='edit';
   reviewFilter='all';
   const version=++routeVersion, path=location.pathname;
   document.body.className=''; document.title='简序 JIANXU · 让经历，清晰可见';
@@ -115,7 +189,7 @@ function renderHomeResume(){
  </div>`;
 }
 function renderHome(){
- app.innerHTML=`${header()}<main id="main"><section class="hero page-width"><div class="hero-copy"><div class="eyebrow"><span class="tiny-dot"></span> A CLEARER WAY TO PRESENT YOURSELF</div><h1>你的经历，<br>值得<span class="blue-word">清晰呈现<span class="hand-underline"></span></span>。</h1><p class="hero-description">把一份简历，变成一个好读的个人主页。<br>上传、核对、分享，让下一位阅读者看见你的价值。</p><div class="hero-actions"><a href="${user?'/dashboard':'/auth?mode=register'}" data-nav class="button button-primary button-lg">创建我的简历 ${icon('arrow')}</a><a href="/demo" data-nav class="text-link">浏览完整示例 ${icon('arrow')}</a></div><div class="hero-note">${icon('check')} 支持 PDF、Word 与文本 <span></span> 发布前由你确认</div><div class="hero-index"><span>01 / IMPORT</span><i></i><span>02 / REFINE</span><i></i><span>03 / SHARE</span></div></div>${renderHomeResume()}</section><section class="home-strip page-width"><p>让内容成为主角<br><strong>让阅读少一点寻找</strong></p><div>${icon('education')}<span>教育背景</span></div><div>${icon('briefcase')}<span>实习与工作</span></div><div>${icon('award')}<span>荣誉奖项</span></div><div>${icon('code')}<span>项目经历</span></div></section><section class="workflow page-width" id="workflow"><div class="section-heading"><div><span class="eyebrow">FROM DOCUMENT TO OPPORTUNITY</span><h2>三步，把简历整理好。</h2></div><p>系统帮你整理，表达权始终在你。<br>每次发布，都是你确认后的版本。</p></div><div class="workflow-grid"><article><span class="step-number">01</span><div class="step-illustration upload-illustration"><span class="document-chip">PDF</span>${icon('arrow')}<span class="document-chip blue-chip">简序</span></div><h3>上传已有简历</h3><p>导入 PDF、Word 或粘贴文本，自动识别教育、实习、奖项和项目经历。</p></article><article><span class="step-number">02</span><div class="step-illustration review-illustration"><span>${icon('check')} 教育背景</span><span class="review-yellow">${icon('alert')} 待核对</span></div><h3>核对，让表达更准确</h3><p>对照原文检查提取结果，补充遗漏、修正内容，调整适合你的阅读顺序。</p></article><article><span class="step-number">03</span><div class="step-illustration share-illustration">${icon('link')}<span>你的专属简历链接</span>${icon('arrow')}</div><h3>一个链接，分享你的经历</h3><p>确认后发布独立网页。在电脑上清晰展示经历，更新内容也无需更换链接。</p></article></div></section><section class="home-ending page-width"><span class="eyebrow">YOUR NEXT CHAPTER STARTS HERE</span><h2>把下一次自我介绍，<br>准备得更好。</h2><a href="${user?'/dashboard':'/auth?mode=register'}" data-nav class="button button-primary button-lg">开始整理我的经历 ${icon('arrow')}</a><span class="ending-symbol" aria-hidden="true">↗</span></section></main>${footer()}`;
+ app.innerHTML=`${header()}<main id="main"><section class="hero page-width"><div class="hero-copy"><div class="eyebrow"><span class="tiny-dot"></span> A CLEARER WAY TO PRESENT YOURSELF</div><h1>你的经历，<br>值得<span class="blue-word">清晰呈现<span class="hand-underline"></span></span>。</h1><p class="hero-description">把一份简历，变成一个好读的个人主页。<br>上传、核对、分享，让下一位阅读者看见你的价值。</p><div class="hero-actions"><a href="${user?'/dashboard':'/auth?mode=register'}" data-nav class="button button-primary button-lg">创建我的简历 ${icon('arrow')}</a><a href="/demo" data-nav class="text-link">浏览完整示例 ${icon('arrow')}</a></div><div class="hero-note">${icon('check')} 支持 PDF、Word 与文本 <span></span> 发布前由你确认</div><div class="hero-index"><span>01 / IMPORT</span><i></i><span>02 / REFINE</span><i></i><span>03 / SHARE</span></div></div>${renderHomeResume()}</section><section class="home-strip page-width"><p>让内容成为主角<br><strong>让阅读少一点寻找</strong></p><div>${icon('education')}<span>教育背景</span></div><div>${icon('briefcase')}<span>实习与工作</span></div><div>${icon('award')}<span>荣誉奖项</span></div><div>${icon('code')}<span>项目经历</span></div></section><section class="workflow page-width" id="workflow"><div class="section-heading"><div><span class="eyebrow">FROM DOCUMENT TO OPPORTUNITY</span><h2>三步，把简历整理好。</h2></div><p>系统帮你整理，表达权始终在你。<br>每次发布，都是你确认后的版本。</p></div><div class="workflow-grid"><article><span class="step-number">01</span><div class="step-illustration upload-illustration"><span class="document-chip">PDF</span>${icon('arrow')}<span class="document-chip blue-chip">简序</span></div><h3>上传已有简历</h3><p>导入 PDF、Word 或粘贴文本，自动识别教育、实习、奖项和项目经历。</p></article><article><span class="step-number">02</span><div class="step-illustration review-illustration"><span>${icon('check')} 教育背景</span><span class="review-yellow">${icon('alert')} 待核对</span></div><h3>核对，让表达更准确</h3><p>对照原文检查提取结果，补充遗漏、修正内容，调整适合你的阅读顺序。</p></article><article><span class="step-number">03</span><div class="step-illustration share-illustration">${icon('link')}<span>你的专属简历链接</span>${icon('arrow')}</div><h3>一个链接，分享你的经历</h3><p>确认后发布独立网页。在电脑和手机上清晰展示经历，更新内容也无需更换链接。</p></article></div></section><section class="home-ending page-width"><span class="eyebrow">YOUR NEXT CHAPTER STARTS HERE</span><h2>把下一次自我介绍，<br>准备得更好。</h2><a href="${user?'/dashboard':'/auth?mode=register'}" data-nav class="button button-primary button-lg">开始整理我的经历 ${icon('arrow')}</a><span class="ending-symbol" aria-hidden="true">↗</span></section></main>${footer()}`;
 }
 
 function renderAuth(mode=new URLSearchParams(location.search).get('mode')==='register'?'register':'login'){
@@ -175,16 +249,16 @@ function refreshReviewStatus(){
 }
 function renderSourceInspector(){
  const item=activeReview?getFieldReview(editor,activeReview):null;
- if(!item)return `<section class="source-inspector"><span class="eyebrow">FIELD REVIEW</span><h2>点选字段，对照原文</h2><p>点击左侧输入框或“原文”，这里会定位对应内容。完成检查后，可逐项标记已核对。</p><button class="button button-outline button-sm" data-action="next-review">开始核对 ${icon('arrow')}</button></section>`;
+ if(!item)return `<section class="source-inspector"><span class="eyebrow">FIELD REVIEW</span><h2 tabindex="-1">点选字段，对照原文</h2><p>点击字段旁的“原文”定位对应内容。手机上可切换编辑与核对，完成检查后逐项确认。</p><button class="button button-outline button-sm" data-action="next-review">开始核对 ${icon('arrow')}</button></section>`;
  const label=reviewDisplayValue(item);
  const matched=item.ranges.length>0;
  const explanation=matched?(item.changed?'下方高亮保留修改前的来源，请核对当前值。':item.evidence?.match==='normalized'?'已定位原文，提取时统一了文字或日期格式。':'已定位对应原文。'):item.evidence?.match==='ambiguous'?'原文存在多个可能位置，暂不自动高亮。请核对上下文。':'未能可靠定位原文。请检查全文后补充，或确认此项可留空。';
- return `<section class="source-inspector"><div class="source-inspector-top"><span>${esc(sections[item.section].label)}</span><span class="field-review-state ${item.state}">${item.stateLabel}</span></div><h2>${esc(item.label)}</h2><p class="source-record-title">${esc(item.entryTitle)}</p><div class="source-current-value">${label?esc(label):'<span>尚未填写</span>'}</div><p class="source-match-explanation">${explanation}</p>${!item.confirmed&&item.warnings.length?`<div class="source-field-warning">${icon('alert')}<span>${item.warnings.map(w=>esc(w.message)).join('<br>')}</span></div>`:''}<div class="source-review-actions">${!item.confirmed?`<button class="button button-primary button-sm" data-action="confirm-next" ${reviewAttributes(item)}>${icon('check')} 确认并下一项</button>`:''}${item.confirmed?`<button class="button button-outline button-sm" data-action="confirm-field" ${reviewAttributes(item)}>取消已核对</button>`:''}<button class="button button-outline button-sm" data-action="next-review">${item.confirmed?'下一待核对项':'稍后核对'} ${icon('arrow')}</button></div></section>`;
+ return `<section class="source-inspector"><div class="source-inspector-top"><span>${esc(sections[item.section].label)}</span><span class="field-review-state ${item.state}">${item.stateLabel}</span></div><h2 tabindex="-1">${esc(item.label)}</h2><p class="source-record-title">${esc(item.entryTitle)}</p><div class="source-current-value">${label?esc(label):'<span>尚未填写</span>'}</div><p class="source-match-explanation">${explanation}</p>${!item.confirmed&&item.warnings.length?`<div class="source-field-warning">${icon('alert')}<span>${item.warnings.map(w=>esc(w.message)).join('<br>')}</span></div>`:''}<div class="source-review-actions">${!item.confirmed?`<button class="button button-primary button-sm" data-action="confirm-next" ${reviewAttributes(item)}>${icon('check')} 确认并下一项</button>`:''}${item.confirmed?`<button class="button button-outline button-sm" data-action="confirm-field" ${reviewAttributes(item)}>取消已核对</button>`:''}<button class="button button-outline button-sm" data-action="next-review">${item.confirmed?'下一待核对项':'稍后核对'} ${icon('arrow')}</button><button class="button button-outline button-sm mobile-return-edit" data-action="editor-pane" data-panel="edit" data-restore-field="true">${icon('back')} 修改此字段</button></div></section>`;
 }
 const reviewFilterLabels={all:'全部待核对',warning:'需检查',changed:'修改后待核对',unmatched:'未定位原文'};
 function renderReviewFilter(){return `<div class="review-filter"><label for="review-filter">核对范围</label><select id="review-filter" aria-label="筛选待核对字段">${Object.entries(reviewFilterLabels).map(([key,label])=>`<option value="${key}" ${reviewFilter===key?'selected':''}>${label} (${getPendingReviewItems(editor,key).length})</option>`).join('')}</select></div>`;}
 function renderSourceProof(){
- if(!editor.sourceText)return `<div class="proof-empty"><div>${icon('file')}</div><h3>这是一份手动创建的简历</h3><p>填写左侧内容即可。也可以从工作台上传文件，创建带原文对照的新草稿。</p></div>`;
+ if(!editor.sourceText)return `<div class="proof-empty"><div>${icon('file')}</div><h3>这是一份手动创建的简历</h3><p>在“编辑内容”中填写即可。也可以从工作台上传文件，创建带原文对照的新草稿。</p></div>`;
  const item=activeReview?getFieldReview(editor,activeReview):null;
  return `<div class="source-workspace">${renderReviewFilter()}${renderSourceInspector()}<div class="source-document-heading">${icon('file')} 简历原文 · 仅自己可见</div><div class="source-document" tabindex="0" aria-label="简历原文，已定位内容以高亮显示">${renderSourceText(editor.sourceText,item?.ranges||[])}</div></div>`;
 }
@@ -193,11 +267,15 @@ function renderReviewQueue(){
  const pending=getPendingReviewItems(editor,reviewFilter);
  const warnings=warningList();
  const general=warnings.filter(w=>!warningSelection(w));
- return `${renderReviewFilter()}<div class="review-queue-summary"><strong>已核对 ${done} / ${total} 项</strong><p>当前范围：${reviewFilterLabels[reviewFilter]} · ${pending.length} 项。点击条目定位字段与原文。</p></div>${general.length?`<div class="review-list">${general.map(w=>`<article class="review-item"><p>${esc(w.message)}</p><button class="text-button" data-action="resolve-warning" data-index="${warnings.indexOf(w)}">我已查看此提醒 ${icon('check')}</button></article>`).join('')}</div>`:''}${pending.length?`<div class="field-review-queue">${pending.map(item=>`<button class="review-field-item" data-action="review-field" ${reviewAttributes(item)}><span class="review-field-heading"><strong>${esc(item.label)}</strong><span class="field-review-state ${item.state}">${item.stateLabel}</span></span><span class="review-field-context">${esc(item.entryTitle)}</span><span class="review-field-value">${esc(reviewDisplayValue(item)||'尚未填写')}</span>${item.warnings.length?`<span class="review-field-warning">${esc(item.warnings[0].message)}</span>`:''}</button>`).join('')}</div>`:`<div class="proof-empty"><div>${icon('check')}</div><h3>${reviewProgress().pending.length?'当前范围已核对完成':total?'已完成本次字段核对':'暂无待核对字段'}</h3><p>${reviewProgress().pending.length?'其他范围仍有待核对字段，可切换筛选继续。':total?'核对状态自动保存。之后修改内容，需要重新确认。':'可在左侧补充内容，或查看原文检查是否有遗漏。'}</p></div>`}`;
+ return `${renderReviewFilter()}<div class="review-queue-summary"><strong>已核对 ${done} / ${total} 项</strong><p>当前范围：${reviewFilterLabels[reviewFilter]} · ${pending.length} 项。点击条目定位字段与原文。</p></div>${general.length?`<div class="review-list">${general.map(w=>`<article class="review-item"><p>${esc(w.message)}</p><button class="text-button" data-action="resolve-warning" data-index="${warnings.indexOf(w)}">我已查看此提醒 ${icon('check')}</button></article>`).join('')}</div>`:''}${pending.length?`<div class="field-review-queue">${pending.map(item=>`<button class="review-field-item" data-action="review-field" ${reviewAttributes(item)}><span class="review-field-heading"><strong>${esc(item.label)}</strong><span class="field-review-state ${item.state}">${item.stateLabel}</span></span><span class="review-field-context">${esc(item.entryTitle)}</span><span class="review-field-value">${esc(reviewDisplayValue(item)||'尚未填写')}</span>${item.warnings.length?`<span class="review-field-warning">${esc(item.warnings[0].message)}</span>`:''}</button>`).join('')}</div>`:`<div class="proof-empty"><div>${icon('check')}</div><h3>${reviewProgress().pending.length?'当前范围已核对完成':total?'已完成本次字段核对':'暂无待核对字段'}</h3><p>${reviewProgress().pending.length?'其他范围仍有待核对字段，可切换筛选继续。':total?'核对状态自动保存。之后修改内容，需要重新确认。':'可返回编辑补充内容，或查看原文检查是否有遗漏。'}</p></div>`}`;
 }
 function setProofTab(tab){
  proofTab=tab;document.querySelectorAll('.proof-tabs button').forEach(b=>{b.classList.toggle('selected',b.dataset.tab===tab);b.setAttribute('aria-selected',String(b.dataset.tab===tab));});
  const panel=document.querySelector('#proof-content');if(panel){panel.innerHTML=renderProof();panel.classList.toggle('has-source-workspace',tab==='source'&&Boolean(editor?.sourceText));}
+}
+function scrollToSourceHit(){
+ const panel=document.querySelector('.source-document'),hit=panel?.querySelector('[data-source-hit]');
+ if(panel&&hit)panel.scrollTop=hit.getBoundingClientRect().top-panel.getBoundingClientRect().top+panel.scrollTop-72;
 }
 function focusReview(selection,{focusInput=false}={}){
  if(!editor?.sourceText||!getFieldReview(editor,selection))return;
@@ -205,9 +283,9 @@ function focusReview(selection,{focusInput=false}={}){
  if(editorSection!==selection.section){editorSection=selection.section;proofTab='source';renderEditor();}
  else setProofTab('source');
  refreshReviewStatus();
- const panel=document.querySelector('.source-document'),hit=panel?.querySelector('[data-source-hit]');
- if(panel&&hit)panel.scrollTop=hit.getBoundingClientRect().top-panel.getBoundingClientRect().top+panel.scrollTop-72;
- if(focusInput){const container=Array.from(document.querySelectorAll('[data-field-container]')).find(node=>node.dataset.fieldContainer===reviewKey(selection));container?.scrollIntoView({block:'nearest'});container?.querySelector('[data-field]')?.focus({preventScroll:true});}
+ if(focusInput&&isMobileEditor())setMobileEditorPanel('proof');
+ if(!isMobileEditor()||mobileEditorPanel==='proof')scrollToSourceHit();
+ if(focusInput&&!isMobileEditor()){const container=Array.from(document.querySelectorAll('[data-field-container]')).find(node=>node.dataset.fieldContainer===reviewKey(selection));container?.scrollIntoView({block:'nearest'});container?.querySelector('[data-field]')?.focus({preventScroll:true});}
 }
 function nextReview(){
  const next=getNextReviewItem(editor,activeReview,reviewFilter);
@@ -229,8 +307,8 @@ function renderEditor(){
  document.body.className='editor-page';document.title=`编辑 ${editor.title} · 简序 JIANXU`;
  const warnings=warningList();
  pruneReview(editor);if(activeReview&&!fieldRecord(editor,activeReview))activeReview=null;
- app.innerHTML=`<header class="editor-header"><div class="editor-header-left"><a href="/dashboard" data-nav class="icon-button" aria-label="返回工作台">${icon('back')}</a>${brand()}<span class="editor-divider"></span><label class="title-input-label"><span class="sr-only">简历名称</span><input id="resume-title" value="${esc(editor.title)}" maxlength="120" placeholder="给这份简历起个名字"></label></div><div class="editor-header-actions"><span id="save-state" class="save-state" role="status" aria-live="polite" aria-atomic="true"></span><button class="button button-outline button-sm" data-action="save">${icon('save')} 保存草稿</button><button class="button button-ghost button-sm" data-action="preview">${icon('eye')}<span>预览</span></button><button class="button button-primary button-sm" data-action="publish">${editor.status==='published'?'更新发布':'发布简历'} ${icon('arrow')}</button></div></header><div class="editor-shell"><aside class="editor-sidebar"><div class="workspace-label">编辑工作室 <span>WORKSPACE</span></div><nav aria-label="编辑模块">${Object.entries(sections).map(([k,v])=>`<button data-action="editor-section" data-section="${k}" class="${editorSection===k?'selected':''}">${icon(v.icon)}<span>${v.label}</span>${k!=='profile'&&k!=='settings'?`<small>${editor.content[k].length}</small>`:''}</button>`).join('')}</nav><div class="editor-sidebar-note"><span class="status-badge ${editor.status==='published'?'published':''}"><i></i>${editor.status==='published'?'已发布':'私人草稿'}</span><p>${editor.status==='published'?'保存只更新草稿。点击“更新发布”，才会改变他人看到的内容。':'你的内容仅自己可见。检查完成后，再发布分享。'}</p>${editor.status==='published'?`<button class="text-button" data-action="editor-share">复制公开链接 ${icon('link')}</button>`:''}</div></aside><main id="main" class="editor-main"><div class="editor-section-header"><span class="eyebrow">${String(Object.keys(sections).indexOf(editorSection)+1).padStart(2,'0')} / YOUR EXPERIENCE</span><div><h1>${sections[editorSection].label}</h1>${!['profile','settings'].includes(editorSection)?`<button class="button button-outline button-sm" data-action="add-record" data-section="${editorSection}">${icon('plus')} 添加经历</button>`:''}</div><p>${sections[editorSection].note}</p></div>${editor.sourceText&&editorSection!=='settings'?`<div id="field-review-progress" class="field-review-progress">${renderReviewProgress()}</div>`:''}<p id="save-error" class="save-error-notice" role="alert" hidden></p><div id="editor-fields">${renderEditorFields()}</div><div class="editor-bottom-nav"><p>${icon('check')} 修改自动保存为草稿，发布前可先预览。</p><button class="text-button" data-action="next-section">${editorSection==='settings'?'预览展示效果':'继续下一项'} ${icon('arrow')}</button></div></main><aside class="proof-panel"><div class="proof-tabs" role="tablist" aria-label="核对参考"><button role="tab" aria-selected="${proofTab==='source'}" class="${proofTab==='source'?'selected':''}" data-action="proof-tab" data-tab="source">原文对照</button><button role="tab" aria-selected="${proofTab==='review'}" class="${proofTab==='review'?'selected':''}" data-action="proof-tab" data-tab="review">待核对 <span id="review-count">${reviewProgress().pending.length}</span></button><button role="tab" aria-selected="${proofTab==='preview'}" class="${proofTab==='preview'?'selected':''}" data-action="proof-tab" data-tab="preview">缩略预览</button></div><div id="proof-content" class="${proofTab==='source'&&editor.sourceText?'has-source-workspace':''}">${renderProof()}</div></aside></div>`;
- mountOrderSorting();refreshReviewStatus();editorDirtyStatus();setBusy(editor.busy);
+ app.innerHTML=`<header class="editor-header"><div class="editor-header-left"><a href="/dashboard" data-nav class="icon-button" aria-label="返回工作台">${icon('back')}</a>${brand()}<span class="editor-divider"></span><label class="title-input-label"><span class="sr-only">简历名称</span><input id="resume-title" value="${esc(editor.title)}" maxlength="120" placeholder="给这份简历起个名字"></label></div><div class="editor-header-actions"><span id="save-state" class="save-state" role="status" aria-live="polite" aria-atomic="true"></span><button class="button button-outline button-sm" data-action="save">${icon('save')} 保存草稿</button><button class="button button-ghost button-sm" data-action="preview">${icon('eye')}<span>预览</span></button><button class="button button-primary button-sm" data-action="publish">${editor.status==='published'?'更新发布':'发布简历'} ${icon('arrow')}</button></div></header><nav class="editor-pane-switch" aria-label="编辑工作区"><button type="button" data-action="editor-pane" data-panel="edit" aria-controls="main" aria-pressed="${mobileEditorPanel==='edit'}">${icon('file')} 编辑内容</button><button type="button" data-action="editor-pane" data-panel="proof" aria-controls="editor-proof" aria-pressed="${mobileEditorPanel==='proof'}">${icon('eye')} 原文与核对</button></nav><div class="editor-shell" data-mobile-panel="${mobileEditorPanel}"><aside class="editor-sidebar"><div class="workspace-label">编辑工作室 <span>WORKSPACE</span></div><nav aria-label="编辑模块">${Object.entries(sections).map(([k,v])=>`<button data-action="editor-section" data-section="${k}" class="${editorSection===k?'selected':''}">${icon(v.icon)}<span>${v.label}</span>${k!=='profile'&&k!=='settings'?`<small>${editor.content[k].length}</small>`:''}</button>`).join('')}</nav><div class="editor-sidebar-note"><span class="status-badge ${editor.status==='published'?'published':''}"><i></i>${editor.status==='published'?'已发布':'私人草稿'}</span><p>${editor.status==='published'?'保存只更新草稿。点击“更新发布”，才会改变他人看到的内容。':'你的内容仅自己可见。检查完成后，再发布分享。'}</p>${editor.status==='published'?`<button class="text-button" data-action="editor-share">复制公开链接 ${icon('link')}</button>`:''}</div></aside><main id="main" class="editor-main"><div class="editor-section-header"><span class="eyebrow">${String(Object.keys(sections).indexOf(editorSection)+1).padStart(2,'0')} / YOUR EXPERIENCE</span><div><h1 tabindex="-1">${sections[editorSection].label}</h1>${!['profile','settings'].includes(editorSection)?`<button class="button button-outline button-sm" data-action="add-record" data-section="${editorSection}">${icon('plus')} 添加经历</button>`:''}</div><p>${sections[editorSection].note}</p></div>${editor.sourceText&&editorSection!=='settings'?`<div id="field-review-progress" class="field-review-progress">${renderReviewProgress()}</div>`:''}<p id="save-error" class="save-error-notice" role="alert" hidden></p><div id="editor-fields">${renderEditorFields()}</div><div class="mobile-editor-note"><span class="status-badge ${editor.status==='published'?'published':''}"><i></i>${editor.status==='published'?'已发布':'私人草稿'}</span><p>${editor.status==='published'?'保存只更新草稿，更新发布后才会改变公开页面。':'草稿仅自己可见，检查后再发布分享。'}</p>${editor.status==='published'?`<button class="button button-outline button-sm" data-action="editor-share">复制公开链接 ${icon('link')}</button>`:''}</div><div class="editor-bottom-nav"><p>${icon('check')} 修改自动保存为草稿，发布前可先预览。</p><button class="text-button" data-action="next-section">${editorSection==='settings'?'预览展示效果':'继续下一项'} ${icon('arrow')}</button></div></main><aside class="proof-panel" id="editor-proof" aria-label="原文与核对"><div class="proof-tabs" role="tablist" aria-label="核对参考"><button role="tab" aria-selected="${proofTab==='source'}" class="${proofTab==='source'?'selected':''}" data-action="proof-tab" data-tab="source">原文对照</button><button role="tab" aria-selected="${proofTab==='review'}" class="${proofTab==='review'?'selected':''}" data-action="proof-tab" data-tab="review">待核对 <span id="review-count">${reviewProgress().pending.length}</span></button><button role="tab" aria-selected="${proofTab==='preview'}" class="${proofTab==='preview'?'selected':''}" data-action="proof-tab" data-tab="preview">缩略预览</button></div><div id="proof-content" class="${proofTab==='source'&&editor.sourceText?'has-source-workspace':''}">${renderProof()}</div></aside></div>`;
+ mountOrderSorting();refreshReviewStatus();editorDirtyStatus();setBusy(editor.busy);syncMobileEditorPanel();
 }
 function renderField([key,label,type,placeholder,wide],section,record,index){
  const value=record[key]??'',id=`field-${section}-${index}-${key}`;
@@ -276,7 +354,7 @@ function mountOrderSorting(){
    }
  });
 }
-function renderSettings(){const s=editor.content.settings;return `<section class="settings-block"><h2>阅读顺序与模块显示</h2><p class="order-help" id="order-help">长按左侧六点把手约 0.15 秒，再上下拖动排序。也可用“更多”指定位置。键盘：把手上按空格或回车开始，上下键移动，再次确认；Esc 取消。</p><p>取消勾选可隐藏模块，内容仍保留在草稿中。顺序修改需更新发布后才对 HR 生效。</p><div class="order-list" role="list" aria-label="简历展示模块顺序">${renderOrderRows()}</div><p class="order-sort-status sr-only" role="status" aria-live="polite" aria-atomic="true"></p></section><section class="settings-block"><h2>联系方式公开范围</h2><p>选择阅读者可以看到的联系方式，发布后生效。</p><label class="checkbox-row privacy-row"><input type="checkbox" data-setting="showEmail" ${s.showEmail?'checked':''}><span><strong>公开邮箱</strong><small>${esc(editor.content.profile.email||'尚未填写邮箱')}</small></span></label><label class="checkbox-row privacy-row"><input type="checkbox" data-setting="showPhone" ${s.showPhone?'checked':''}><span><strong>公开电话</strong><small>${esc(editor.content.profile.phone||'尚未填写电话')}</small></span></label></section><section class="settings-block"><h2>简约蓝 · 当前展示样式</h2><p>清晰的标题层级、适当的留白和克制的色彩，让经历成为阅读重点。页面采用桌面浏览器布局。</p><div class="theme-preview"><span></span><span></span><span></span><strong>JIANXU / COBALT</strong>${icon('check')}</div></section>`;}
+function renderSettings(){const s=editor.content.settings;return `<section class="settings-block"><h2>阅读顺序与模块显示</h2><p class="order-help" id="order-help">长按左侧六点把手约 0.15 秒，再上下拖动排序。也可用“更多”指定位置。键盘：把手上按空格或回车开始，上下键移动，再次确认；Esc 取消。</p><p>取消勾选可隐藏模块，内容仍保留在草稿中。顺序修改需更新发布后才对 HR 生效。</p><div class="order-list" role="list" aria-label="简历展示模块顺序">${renderOrderRows()}</div><p class="order-sort-status sr-only" role="status" aria-live="polite" aria-atomic="true"></p></section><section class="settings-block"><h2>联系方式公开范围</h2><p>选择阅读者可以看到的联系方式，发布后生效。</p><label class="checkbox-row privacy-row"><input type="checkbox" data-setting="showEmail" ${s.showEmail?'checked':''}><span><strong>公开邮箱</strong><small>${esc(editor.content.profile.email||'尚未填写邮箱')}</small></span></label><label class="checkbox-row privacy-row"><input type="checkbox" data-setting="showPhone" ${s.showPhone?'checked':''}><span><strong>公开电话</strong><small>${esc(editor.content.profile.phone||'尚未填写电话')}</small></span></label></section><section class="settings-block"><h2>简约蓝 · 当前展示样式</h2><p>清晰的标题层级、适当的留白和克制的色彩，让经历成为阅读重点。页面会根据电脑、平板和手机的屏幕宽度调整布局。</p><div class="theme-preview"><span></span><span></span><span></span><strong>JIANXU / COBALT</strong>${icon('check')}</div></section>`;}
 function renderProof(){
  if(proofTab==='preview')return `<div class="proof-preview-info"><span>缩略预览随修改实时更新。</span><button class="button button-outline button-sm" data-action="preview">放大阅读 ${icon('arrow')}</button></div><div class="live-preview">${renderResume(editor.content,{compact:true,anchorPrefix:'live'})}</div>`;
  if(proofTab==='review')return renderReviewQueue();
@@ -311,11 +389,21 @@ async function saveEditor(publishing=false){
 }
 function shareLink(resume){return safeUrl(resume?.shareUrl)|| (resume?.slug?`${location.origin}/r/${encodeURIComponent(resume.slug)}`:'');}
 function showPublishSuccess(){const link=shareLink(editor);openModal(`<div class="publish-success-icon">${icon('check')}</div><span class="eyebrow">READY TO BE SEEN</span><h2 id="modal-title">你的经历，已准备好分享。</h2><p>阅读者无需登录即可查看。之后更新发布，仍使用这个链接。</p><label class="form-field"><span>独立展示链接</span><input id="share-url" value="${esc(link)}" readonly></label><div class="modal-actions"><button class="button button-outline" data-action="copy-published">${icon('copy')} 复制链接</button><a class="button button-primary" href="${esc(link)}" target="_blank" rel="noopener">打开展示页 ${icon('arrow')}</a></div><button class="text-button done-button" data-action="close-modal">返回编辑</button>`,'publish-modal');}
-async function copyLink(link){if(!link){toast('请先发布简历，再分享链接。',true);return;}try{await navigator.clipboard.writeText(link);toast('分享链接已复制。');}catch{openModal(`<div class="modal-header"><h2 id="modal-title">复制分享链接</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">${icon('close')}</button></div><p class="modal-description">请选中下方链接，按 Ctrl+C（Mac 使用 ⌘C）复制。</p><input class="copy-fallback" value="${esc(link)}" readonly aria-label="分享链接">`,'confirm-modal');modal.querySelector('input').select();}}
+async function copyLink(link){if(!link){toast('请先发布简历，再分享链接。',true);return;}try{await navigator.clipboard.writeText(link);toast('分享链接已复制。');}catch{openModal(`<div class="modal-header"><h2 id="modal-title">复制分享链接</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">${icon('close')}</button></div><p class="modal-description">手机可长按下方链接并选择“复制”；电脑可按 Ctrl+C（Mac 使用 ⌘C）复制。</p><input class="copy-fallback" value="${esc(link)}" readonly aria-label="分享链接">`,'confirm-modal');modal.querySelector('input').select();}}
 
 document.addEventListener('click',async event=>{
  const nav=event.target.closest('[data-nav]');
  if(nav&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&event.button===0){event.preventDefault();await navigate(nav.getAttribute('href'));return;}
+ const chapter=event.target.closest('.public-sidebar nav a');
+ if(chapter&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&event.button===0){
+  const hash=chapter.getAttribute('href'),section=document.querySelector(hash);
+  if(section){
+   // Native hash history also fires popstate, which would remount the SPA page.
+   event.preventDefault();history.replaceState({},'',hash);selectPublicChapter(chapter.parentElement,chapter);
+   section.scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  }
+  return;
+ }
  const target=event.target.closest('[data-action]');if(!target||target.disabled)return;
  const action=target.dataset.action;
  try{
@@ -333,8 +421,9 @@ document.addEventListener('click',async event=>{
   case 'share':{const r=dashboardResumes.find(r=>r.id===target.dataset.id);await copyLink(shareLink(r));break;}
   case 'unpublish':{const r=dashboardResumes.find(r=>r.id===target.dataset.id);if(await confirmDialog('将这份简历下架？','下架后，其他人将无法通过分享链接查看。草稿仍然保留，你可以随时重新发布。','确认下架')){await api(`/api/resumes/${encodeURIComponent(r.id)}/unpublish`,{method:'POST'});await renderRoute();toast('简历已下架，草稿已保留。');}break;}
   case 'delete-resume':{const r=dashboardResumes.find(r=>r.id===target.dataset.id);if(await confirmDialog('删除这份简历？',`“${r.title}”将被永久删除，公开链接也会失效。此操作无法撤销。`,'删除简历',true)){await api(`/api/resumes/${encodeURIComponent(r.id)}`,{method:'DELETE'});await renderRoute();toast('简历已删除。');}break;}
-  case 'editor-section':activeReview=null;editorSection=target.dataset.section;renderEditor();document.querySelector('.editor-main')?.scrollTo(0,0);break;
-  case 'next-section':{const list=Object.keys(sections),index=list.indexOf(editorSection);if(index===list.length-1){showPreview();}else{activeReview=null;editorSection=list[index+1];renderEditor();document.querySelector('.editor-main')?.scrollTo(0,0);}break;}
+  case 'editor-pane':setMobileEditorPanel(target.dataset.panel,{restoreField:target.dataset.panel==='edit'});break;
+  case 'editor-section':activeReview=null;editorSection=target.dataset.section;mobileEditorPanel='edit';renderEditor();document.querySelector('.editor-main')?.scrollTo(0,0);if(isMobileEditor())setMobileEditorPanel('edit');break;
+  case 'next-section':{const list=Object.keys(sections),index=list.indexOf(editorSection);if(index===list.length-1){showPreview();}else{activeReview=null;editorSection=list[index+1];mobileEditorPanel='edit';renderEditor();document.querySelector('.editor-main')?.scrollTo(0,0);if(isMobileEditor())setMobileEditorPanel('edit');}break;}
   case 'proof-tab':setProofTab(target.dataset.tab);break;
   case 'review-field':focusReview(selectionFrom(target),{focusInput:true});break;
   case 'next-review':nextReview();break;
@@ -347,7 +436,7 @@ document.addEventListener('click',async event=>{
   case 'move-record':{const rows=editor.content[target.dataset.section],i=Number(target.dataset.index),j=i+Number(target.dataset.direction);if(j>=0&&j<rows.length){[rows[i],rows[j]]=[rows[j],rows[i]];queueAutosave();renderEditor();}break;}
   case 'resolve-warning':{const warning=warningList()[Number(target.dataset.index)];const index=editor.warnings.indexOf(warning);if(index>=0)editor.warnings.splice(index,1);refreshProof();toast('已记录，将自动保存到草稿。');break;}
   case 'save':case 'retry-save':await saveEditor();break;
-  case 'publish':if(!editor.content.profile.name.trim()){editorSection='profile';renderEditor();document.querySelector('[data-field="name"]')?.focus();toast('请先填写姓名，再发布简历。',true);break;}if(await confirmDialog(editor.status==='published'?'更新公开简历？':'准备好发布简历了吗？',`将保存当前内容并${editor.status==='published'?'更新':'发布'}展示页。${warningList().length?`还有 ${warningList().length} 条识别提示，请确保已核对学历、经历和成果。`:'请确认内容准确，并检查联系方式的公开范围。'}`,editor.status==='published'?'保存并更新发布':'保存并发布'))await saveEditor(true);break;
+  case 'publish':if(!editor.content.profile.name.trim()){editorSection='profile';mobileEditorPanel='edit';renderEditor();document.querySelector('[data-field="name"]')?.focus();toast('请先填写姓名，再发布简历。',true);break;}if(await confirmDialog(editor.status==='published'?'更新公开简历？':'准备好发布简历了吗？',`将保存当前内容并${editor.status==='published'?'更新':'发布'}展示页。${warningList().length?`还有 ${warningList().length} 条识别提示，请确保已核对学历、经历和成果。`:'请确认内容准确，并检查联系方式的公开范围。'}`,editor.status==='published'?'保存并更新发布':'保存并发布'))await saveEditor(true);break;
   case 'preview':showPreview();break;
   case 'editor-share':case 'copy-published':await copyLink(shareLink(editor));break;
  }

@@ -22,8 +22,8 @@ dialog{border:1px solid #dce2e7;border-radius:12px;padding:32px;max-width:calc(1
     --green:#246044;
     --amber:#805211;
   }
-  /* Reserve scrollbar space at the recommended 1200px desktop window width. */
-  body {min-width:1180px;font-size:16px;line-height:1.7}
+  /* Layout breakpoints handle narrow screens without forcing a desktop canvas. */
+  body {min-width:0;font-size:16px;line-height:1.7}
   button:focus-visible,a:focus-visible,summary:focus-visible {outline:3px solid var(--blue);outline-offset:3px}
   input:focus,textarea:focus,select:focus {outline:2px solid var(--blue);outline-offset:2px}
   ::placeholder {color:#64748b;opacity:1}

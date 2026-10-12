@@ -2,7 +2,9 @@
 
 本地可运行的多用户简历解析与展示平台。前端原生 HTML/CSS/JS，后端 Node 24 + Express，数据库 SQLite。所有 UI 中文，示例数据明确标记为演示。
 
-V2 首轮实现多段简历提取改进，以及字段与原文联动核对；当前迭代在此基础上增加自动保存草稿和核对效率改进。保持桌面专用布局，保留手动保存入口；不包含手机适配、OCR 或跨重启离线恢复，也不保证任意排版均可准确解析。
+V2 首轮实现多段简历提取改进，以及字段与原文联动核对；当前迭代在此基础上增加自动保存草稿、核对效率改进和移动端适配。界面支持桌面、平板和手机，保留手动保存入口；不包含 OCR 或跨重启离线恢复，也不保证任意排版均可准确解析。
+
+窄屏编辑器通过「编辑内容／原文与核对」切换同一组表单和核对面板，输入时保留当前编辑视图；主动查看原文后可返回对应字段。首页、工作台、弹窗和公开简历按屏幕宽度调整布局，HR 章节导航在小屏上横向滚动。触屏长按排序沿用 150ms 启动，并在页面边缘自动滚动；桌面仍使用编辑区域滚动。响应式样式仅作用于屏幕，打印继续使用原打印样式。
 
 ## 数据结构
 
@@ -89,6 +91,7 @@ responsibilities、achievements、technologies、courses、items 都是字符串
 - 解析器：server/parser.js、server/extract.js、tests/parser.test.js、samples/。
 - 来源与核对：server/provenance.js、public/review.js 及相应测试；确认输入由 server/validation.js 校验。
 - 自动保存：public/autosave.js 负责延迟合并、单条在途请求、手动触发与失败重试；public/app.js 负责草稿快照、状态显示和离开保护。
+- 移动端：public/mobile.css 负责公共页面与弹窗，public/mobile-editor.css 负责编辑器；public/app.js 管理面板切换和章节导航，public/order-sort.js 处理指针、键盘排序与边缘滚动。
 - 集成：package.json、README.md、docs/、其余集成测试与交付打包。
 
 解析器入口：export async function parseResume(text, {useAI=false}={}) 返回 {content,sourceText,warnings,method}；export function emptyResume()。extract.js 导出 async extractDocument(buffer, filename) 返回字符串。警告格式 [{section,field,message,recordId?}]。解析器尽可能完整保留原文并标记需要核对的内容。AI 不可用或失败时返回规则结果并提示，绝不伪称调用成功。

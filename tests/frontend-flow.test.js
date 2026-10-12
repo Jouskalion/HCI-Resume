@@ -50,9 +50,11 @@ function resume(id) {
   return record;
 }
 
-function browserHarness() {
+function browserHarness({ mobile = false, realReviewFocus = false } = {}) {
   const handlers = new Map(), windowHandlers = new Map(), nodes = new Map(), collections = new Map(), messages = [], navigations = [], focused = [], clock = fakeClock();
-  const node = () => ({ innerHTML: '', dataset: {}, disabled: false, classList: { contains: () => false, add() {}, remove() {}, toggle() {} }, addEventListener() {}, focus() {}, scrollTo() {}, scrollIntoView() {}, setAttribute() {}, querySelector() { return null; }, querySelectorAll() { return []; } });
+  const mediaHandlers = new Map(), domFocus = [], scrolls = [], renders = [];
+  const media = { matches: mobile, addEventListener(name, handler) { mediaHandlers.set(name, handler); } };
+  const node = () => ({ innerHTML: '', dataset: {}, attributes: {}, disabled: false, classList: { contains: () => false, add() {}, remove() {}, toggle() {} }, addEventListener() {}, focus() { domFocus.push(this); context.document.activeElement = this; }, scrollTo() {}, scrollIntoView(options) { scrolls.push({ node: this, options }); }, setAttribute(name, value) { this.attributes[name] = value; }, closest() { return null; }, querySelector() { return null; }, querySelectorAll() { return []; } });
   const context = vm.createContext({
     structuredClone, FormData, URL, URLSearchParams, console, fields, sections, newRecord, esc, icon, ...reviewHelpers,
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
@@ -62,31 +64,37 @@ function browserHarness() {
       querySelectorAll(selector) { return collections.get(selector) || []; },
       addEventListener(name, handler) { handlers.set(name, handler); },
     },
-    window: { addEventListener(name, handler) { windowHandlers.set(name, handler); }, scrollTo() {} },
+    window: { addEventListener(name, handler) { windowHandlers.set(name, handler); }, matchMedia: () => media, scrollTo() {} },
     history: { pushState(_state, _unused, path) { navigations.push(path); }, replaceState(_state, _unused, path) { navigations.push(path); } },
     testToast(message) { messages.push(message); },
     testRender() {},
+    testEditorRender() { renders.push(true); },
     testNavigate: async path => { navigations.push(path); },
     testFocus: selection => { focused.push(structuredClone(selection)); },
   });
   vm.runInContext(autosaveSource, context);
   vm.runInContext(source, context);
   vm.runInContext(`
-    toast = testToast; renderImport = testRender; renderEditor = testRender;
+    toast = testToast; renderImport = testRender; renderEditor = testEditorRender;
     showPublishSuccess = testRender; editorDirtyStatus = testRender; closeModal = testRender;
     const realNavigate = navigate;
     navigate = testNavigate;
     globalThis.enableNavigation = () => { navigate = realNavigate; renderRoute = testRender; };
+    const realFocusReview = focusReview;
     focusReview = selection => { activeReview = selection; testFocus(selection); };
+    globalThis.enableReviewFocus = () => { focusReview = realFocusReview; };
     globalThis.setEditor = value => { editor = value; };
+    globalThis.setEditorSection = value => { editorSection = value; };
     globalThis.setVersion = value => { routeVersion = value; };
     globalThis.setUser = value => { user = value; };
     globalThis.setImport = value => { importState = value; };
-    globalThis.getState = () => ({ editor, importState, routeVersion, user, activeReview, reviewFilter, dirty: dirty() });
+    globalThis.getState = () => ({ editor, importState, routeVersion, user, activeReview, reviewFilter, editorSection, proofTab, mobileEditorPanel, dirty: dirty() });
     globalThis.setApi = value => { api = value; };
   `, context);
   context.setUser({ id: 'user-A' });
-  return { context, handlers, windowHandlers, messages, navigations, focused, clock, nodes, collections };
+  if (realReviewFocus) context.enableReviewFocus();
+  const resize = matches => { media.matches = matches; mediaHandlers.get('change')?.({ matches }); };
+  return { context, handlers, windowHandlers, messages, navigations, focused, clock, nodes, collections, node, domFocus, scrolls, renders, resize };
 }
 
 function inputField(handlers, section, field, value, index = 0) {
@@ -595,3 +603,271 @@ test('发布排队立即锁定并阻止离开，双重加锁结束后恢复控�
   assert.equal(enabled.dataset.wasDisabled, undefined);
   assert.equal(disabled.dataset.wasDisabled, undefined);
 });
+
+function mountedField(harness, record, section, field, index = 0) {
+  const input = harness.node(), container = harness.node();
+  const row = section === 'profile' ? record.content.profile : record.content[section][index];
+  const selection = { section, recordId: section === 'profile' ? 'profile' : row.id, field };
+  Object.assign(input, { value: row[field] || '', selectionStart: 2, selectionEnd: 4 });
+  input.dataset = { section, field, index: String(index) };
+  input.closest = selector => selector === '.editor-main' ? container : null;
+  container.dataset.fieldContainer = reviewHelpers.reviewKey(selection);
+  container.querySelector = selector => selector === '[data-field]' ? input : null;
+  const fields = harness.collections.get('[data-field-container]') || [];
+  fields.push(container);
+  harness.collections.set('[data-field-container]', fields);
+  return { input, container, selection };
+}
+
+for (const mobile of [false, true]) {
+  test(`${mobile ? '手机' : '桌面'}正常输入字段焦点只联动原文，不抢焦点或切换工作区`, () => {
+    const h = browserHarness({ mobile, realReviewFocus: true }), record = resume('A');
+    h.context.setEditor(record);
+    const { input, selection } = mountedField(h, record, 'profile', 'summary');
+    input.focus();
+    h.handlers.get('focusin')({ target: input });
+    assert.deepEqual(structuredClone(h.context.getState().activeReview), selection);
+    assert.equal(h.context.getState().mobileEditorPanel, 'edit');
+    assert.equal(h.context.document.activeElement, input);
+    assert.deepEqual(h.domFocus, [input], '原文联动不能把焦点移到核对面板或另一个字段');
+    assert.equal(h.renders.length, 0, '同模块输入不能重建编辑器');
+    assert.equal(h.scrolls.length, 0, '普通字段焦点不能滚走正在输入的内容');
+  });
+}
+
+test('手机查看原文再返回编辑保留字段节点、输入内容和选择范围', async () => {
+  const h = browserHarness({ mobile: true, realReviewFocus: true }), record = resume('A');
+  h.context.setEditor(record);
+  const { input, container, selection } = mountedField(h, record, 'profile', 'summary');
+  input.value = '仍在编辑中的最新内容';
+  h.handlers.get('input')({ target: input });
+  await clickAction(h.handlers, 'review-field', { reviewSection: 'profile', reviewRecord: 'profile', reviewField: 'summary' });
+  assert.equal(h.context.getState().mobileEditorPanel, 'proof');
+  assert.equal(h.context.getState().proofTab, 'source');
+  assert.deepEqual(structuredClone(h.context.getState().activeReview), selection);
+  assert.equal(h.context.document.activeElement, h.nodes.get('.source-inspector h2'));
+  assert.equal(h.domFocus.includes(input), false, '进入核对不能聚焦已隐藏的输入框而弹出手机键盘');
+  await clickAction(h.handlers, 'editor-pane', { panel: 'edit' });
+  assert.equal(h.context.getState().mobileEditorPanel, 'edit');
+  assert.equal(h.context.document.activeElement, input);
+  assert.equal(h.collections.get('[data-field-container]')[0], container);
+  assert.equal(input.value, '仍在编辑中的最新内容');
+  assert.equal(record.content.profile.summary, input.value);
+  assert.equal(input.selectionStart, 2);
+  assert.equal(input.selectionEnd, 4);
+  assert.equal(h.renders.length, 0);
+  assert.equal(h.context.getState().dirty, true);
+});
+
+test('手机确认并下一项继续显示下一字段原文，核对状态自动保存且不发布', async () => {
+  const h = browserHarness({ mobile: true, realReviewFocus: true }), record = educationReviewFixture(), requests = [];
+  h.context.setEditor(record);
+  h.context.setEditorSection('education');
+  const school = mountedField(h, record, 'education', 'school');
+  const level = mountedField(h, record, 'education', 'level');
+  h.context.setApi(async (path, options) => { requests.push({ path, ...structuredClone(options) }); return { resume: { status: 'draft' } }; });
+  await clickAction(h.handlers, 'review-field', { reviewSection: 'education', reviewRecord: 'edu-second', reviewField: 'school' });
+  await clickAction(h.handlers, 'confirm-next', { reviewSection: 'education', reviewRecord: 'edu-second', reviewField: 'school' });
+  assert.equal(reviewHelpers.getFieldReview(record, school.selection).confirmed, true);
+  assert.equal(reviewHelpers.reviewKey(h.context.getState().activeReview), reviewHelpers.reviewKey(level.selection));
+  assert.equal(h.context.getState().mobileEditorPanel, 'proof');
+  assert.equal(h.context.getState().proofTab, 'source');
+  assert.equal(h.context.document.activeElement, h.nodes.get('.source-inspector h2'));
+  assert.equal(h.domFocus.includes(level.input), false);
+  h.clock.advance(1000);
+  await settle();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, '/api/resumes/A');
+  assert.equal(requests[0].method, 'PUT');
+  assert.deepEqual(requests[0].body.review.confirmations, [{ ...school.selection, value: school.input.value }]);
+  assert.equal(record.status, 'draft');
+});
+
+test('跨越手机断点只更新可见工作区，保留编辑内容、字段节点和当前焦点', async () => {
+  const h = browserHarness({ realReviewFocus: true }), record = resume('A');
+  h.context.setEditor(record);
+  const { input, container } = mountedField(h, record, 'profile', 'summary');
+  input.value = '横竖屏切换期间的编辑';
+  h.handlers.get('input')({ target: input });
+  input.focus();
+  h.resize(true);
+  assert.equal(h.context.getState().mobileEditorPanel, 'edit');
+  assert.equal(h.context.document.activeElement, input);
+  assert.equal(h.nodes.get('.editor-shell').dataset.mobilePanel, 'edit');
+  h.resize(false);
+  assert.equal(h.context.document.activeElement, input);
+  const sourceFocus = h.node();
+  sourceFocus.closest = selector => selector === '.proof-panel' ? h.node() : null;
+  sourceFocus.focus();
+  h.resize(true);
+  assert.equal(h.context.getState().mobileEditorPanel, 'proof', '从桌面缩窄时应保留正在阅读的核对面板');
+  assert.equal(h.context.document.activeElement, sourceFocus);
+  h.resize(false);
+  assert.equal(h.context.document.activeElement, sourceFocus);
+  assert.equal(record.content.profile.summary, input.value);
+  assert.equal(h.collections.get('[data-field-container]')[0], container);
+  assert.equal(input.selectionStart, 2);
+  assert.equal(input.selectionEnd, 4);
+  assert.equal(h.renders.length, 0);
+  assert.equal(h.scrolls.length, 0);
+  assert.equal(h.context.getState().dirty, true);
+});
+
+test('手机切换条获得焦点后放大至桌面，将焦点移到仍可见的编辑标题', () => {
+  const h = browserHarness({ mobile: true, realReviewFocus: true });
+  h.context.setEditor(resume('A'));
+  const switchButton = h.node();
+  switchButton.closest = selector => selector === '.editor-pane-switch' ? h.node() : null;
+  switchButton.focus();
+  h.resize(false);
+  assert.equal(h.context.document.activeElement, h.nodes.get('.editor-section-header h1'));
+  assert.equal(h.renders.length, 0);
+});
+
+function publicChapterFixture({ mobile = true, scrollHeight = 2400 } = {}) {
+  const h = browserHarness({ mobile });
+  const scrollRoot = { scrollTop: 0, clientHeight: 844, scrollHeight };
+  const positions = { education: 240, projects: 760, skills: 1400 };
+  const nav = h.node();
+  Object.assign(nav, {
+    clientWidth: 300,
+    scrollWidth: mobile ? 600 : 300,
+    scrollLeft: 0,
+    getBoundingClientRect: () => ({ left: 0, right: 300 }),
+    parentElement: { getBoundingClientRect: () => ({ bottom: 64 }) },
+  });
+  const links = ['top', 'education', 'projects', 'skills'].map((chapter, index) => {
+    const link = h.node(), classes = new Set(index ? [] : ['active']);
+    link.parentElement = nav;
+    link.getAttribute = name => name === 'href' ? `#resume-${chapter}` : link.attributes[name];
+    link.removeAttribute = name => { delete link.attributes[name]; };
+    link.getBoundingClientRect = () => ({ left: index * 108 - nav.scrollLeft, right: index * 108 + 100 - nav.scrollLeft });
+    link.classList = {
+      contains: name => classes.has(name),
+      toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+    };
+    const section = h.node();
+    section.getBoundingClientRect = () => ({ top: chapter === 'top' ? 0 : positions[chapter] });
+    h.nodes.set(`#resume-${chapter}`, section);
+    return link;
+  });
+  nav.querySelectorAll = selector => selector === 'a' ? links : [];
+  h.nodes.set('.public-sidebar nav', nav);
+  h.context.document.scrollingElement = scrollRoot;
+  h.context.document.documentElement = scrollRoot;
+  h.context.window.innerWidth = mobile ? 390 : 1280;
+  h.context.window.innerHeight = scrollRoot.clientHeight;
+  const scroll = () => h.windowHandlers.get('scroll')();
+  const selected = () => links.filter(link => link.classList.contains('active')).map(link => link.getAttribute('href'));
+  return { ...h, scrollRoot, positions, nav, links, scroll, selected };
+}
+
+for (const mobile of [true, false]) {
+  test(`${mobile ? '手机' : '桌面'}公开简历普通滚动按当前章节更新导航，并清除旧章节的读屏标记`, () => {
+    const h = publicChapterFixture({ mobile });
+    h.positions.education = mobile ? 70 : 120;
+    h.scrollRoot.scrollTop = 200;
+    h.scroll();
+    assert.deepEqual(h.selected(), ['#resume-education']);
+    assert.equal(h.links[1].attributes['aria-current'], 'location');
+    h.positions.education = -400;
+    h.positions.projects = mobile ? 70 : 120;
+    h.positions.skills = 500;
+    h.scrollRoot.scrollTop = 900;
+    h.scroll();
+    assert.deepEqual(h.selected(), ['#resume-projects']);
+    assert.equal(h.links[1].attributes['aria-current'], undefined);
+    assert.equal(h.links[2].attributes['aria-current'], 'location');
+    h.positions.education = 240;
+    h.positions.projects = 760;
+    h.scrollRoot.scrollTop = 0;
+    h.scroll();
+    assert.deepEqual(h.selected(), ['#resume-top']);
+    assert.equal(h.links[0].attributes['aria-current'], 'location');
+    assert.equal(h.links[2].attributes['aria-current'], undefined);
+  });
+
+  test(`${mobile ? '手机' : '桌面'}滚到文档底部时选中较短的最后一节，而不是退回前一节`, () => {
+    const h = publicChapterFixture({ mobile });
+    Object.assign(h.positions, { education: -900, projects: -200, skills: 480 });
+    h.scrollRoot.scrollTop = h.scrollRoot.scrollHeight - h.scrollRoot.clientHeight - 3;
+    h.scroll();
+    assert.deepEqual(h.selected(), ['#resume-projects'], '尚未到底且末节未到阅读起点时仍显示当前章节');
+    h.scrollRoot.scrollTop = h.scrollRoot.scrollHeight - h.scrollRoot.clientHeight;
+    h.scroll();
+    assert.deepEqual(h.selected(), ['#resume-skills'], '末节在视口下半部也应在滚到底时成为当前章节');
+    assert.equal(h.links[3].attributes['aria-current'], 'location');
+    assert.equal(h.links[2].attributes['aria-current'], undefined);
+    if (mobile) assert.ok(h.nav.scrollLeft > 0, '短末节选中后应露出横向导航中的对应标签');
+  });
+}
+
+test('不足一屏的公开简历不会因同时位于文档底部而直接选中末节', () => {
+  const h = publicChapterFixture({ scrollHeight: 844 });
+  Object.assign(h.positions, { education: 240, projects: 460, skills: 680 });
+  h.scroll();
+  assert.deepEqual(h.selected(), ['#resume-top']);
+});
+
+test('公开简历滚到底部只选实际存在的末节，忽略没有内容节点的章节链接', () => {
+  const h = publicChapterFixture();
+  Object.assign(h.positions, { education: -400, projects: 480 });
+  h.nodes.set('#resume-skills', null);
+  h.scrollRoot.scrollTop = h.scrollRoot.scrollHeight - h.scrollRoot.clientHeight;
+  h.scroll();
+  assert.deepEqual(h.selected(), ['#resume-projects']);
+  assert.equal(h.links[2].attributes['aria-current'], 'location');
+});
+
+for (const reducedMotion of [false, true]) {
+  test(`点击公开简历章节仅替换 hash 并${reducedMotion ? '直接' : '平滑'}滚动，不重新挂载页面`, async () => {
+    const h = publicChapterFixture(), replacements = [], renders = [];
+    const chapter = h.links[2], section = h.nodes.get('#resume-projects');
+    h.context.history.replaceState = (_state, _unused, path) => replacements.push(path);
+    h.context.history.pushState = () => assert.fail('章节跳转不应新增 SPA 导航历史');
+    h.context.renderRoute = () => renders.push(true);
+    h.context.window.matchMedia = query => ({ matches: query === '(prefers-reduced-motion: reduce)' && reducedMotion });
+    let prevented = false;
+    await h.handlers.get('click')({
+      target: { closest: selector => selector === '.public-sidebar nav a' ? chapter : null },
+      button: 0,
+      preventDefault() { prevented = true; },
+    });
+    assert.equal(prevented, true, '必须阻止原生 hash 导航，否则 popstate 会重建页面并丢失滚动位置');
+    assert.deepEqual(replacements, ['#resume-projects']);
+    assert.deepEqual(h.navigations, [], '章节不是 SPA 路由导航');
+    assert.deepEqual(renders, [], '章节跳转不能重新渲染当前简历');
+    assert.equal(h.scrolls.length, 1);
+    assert.equal(h.scrolls[0].node, section, '必须滚动到点击的实际章节');
+    assert.deepEqual(structuredClone(h.scrolls[0].options), { block: 'start', behavior: reducedMotion ? 'instant' : 'smooth' });
+    assert.deepEqual(h.selected(), ['#resume-projects']);
+    assert.equal(chapter.attributes['aria-current'], 'location');
+  });
+}
+
+for (const [label, modifiers] of [
+  ['Ctrl', { ctrlKey: true }],
+  ['Meta', { metaKey: true }],
+  ['Shift', { shiftKey: true }],
+  ['鼠标中键', { button: 1 }],
+]) {
+  test(`${label} 点击章节保留浏览器默认行为，不修改当前页面的 URL、滚动或选择`, async () => {
+    const h = publicChapterFixture(), historyCalls = [], renders = [];
+    h.context.history.replaceState = (...args) => historyCalls.push(args);
+    h.context.history.pushState = (...args) => historyCalls.push(args);
+    h.context.renderRoute = () => renders.push(true);
+    let prevented = false;
+    await h.handlers.get('click')({
+      target: { closest: selector => selector === '.public-sidebar nav a' ? h.links[2] : null },
+      button: 0,
+      ...modifiers,
+      preventDefault() { prevented = true; },
+    });
+    assert.equal(prevented, false);
+    assert.deepEqual(historyCalls, []);
+    assert.deepEqual(h.navigations, []);
+    assert.deepEqual(renders, []);
+    assert.deepEqual(h.scrolls, []);
+    assert.deepEqual(h.selected(), ['#resume-top']);
+  });
+}
